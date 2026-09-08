@@ -1,0 +1,13 @@
+{
+  "name": "codefix-ai",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "collab": "HOST=0.0.0.0 PORT=1234 y-websocket"
+  },
+  "dependencies": {
+    "mongodb": "^7.5.0",
+    "y-websocket": "^2.1.0"
+  }
+}
