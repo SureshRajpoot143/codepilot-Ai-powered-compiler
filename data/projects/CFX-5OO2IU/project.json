@@ -1,0 +1,155 @@
+{
+  "project_id": "CFX-5OO2IU",
+  "name": "Suresh Rajpoot's workspace",
+  "owner_id": "U-G103GFSJ",
+  "created_at": 1793094292.342842,
+  "updated_at": 1793094682.570359,
+  "language": "python",
+  "members": {
+    "U-G103GFSJ": {
+      "id": "U-G103GFSJ",
+      "name": "Suresh Rajpoot",
+      "device": "This device",
+      "role": "host"
+    },
+    "U-XB6H9QL3": {
+      "id": "U-XB6H9QL3",
+      "name": "asdfghjkl",
+      "device": "This device",
+      "role": "editor"
+    }
+  },
+  "filesystem": [
+    {
+      "id": "1df9ab9002a4",
+      "parent_id": "",
+      "name": "main.py",
+      "path": "main.py",
+      "is_directory": false,
+      "language": "python",
+      "created_at": 1793094292.346845
+    },
+    {
+      "id": "a8cd45a41e38",
+      "parent_id": "",
+      "name": "README.md",
+      "path": "README.md",
+      "is_directory": false,
+      "language": "markdown",
+      "created_at": 1793094292.362804
+    },
+    {
+      "id": "5f114e9e4d22",
+      "parent_id": "",
+      "name": "code-explaineragent",
+      "path": "code-explaineragent",
+      "is_directory": true,
+      "language": "folder",
+      "created_at": 1793094682.4290628
+    },
+    {
+      "id": "25bf48ff3de2",
+      "parent_id": "code-explaineragent",
+      "name": ".DS_Store",
+      "path": "code-explaineragent/.DS_Store",
+      "is_directory": false,
+      "language": "text"
+    },
+    {
+      "id": "51820406a424",
+      "parent_id": "code-explaineragent",
+      "name": "config.py",
+      "path": "code-explaineragent/config.py",
+      "is_directory": false,
+      "language": "python"
+    },
+    {
+      "id": "17b0754a3c3e",
+      "parent_id": "code-explaineragent",
+      "name": "requirements.txt",
+      "path": "code-explaineragent/requirements.txt",
+      "is_directory": false,
+      "language": "text"
+    },
+    {
+      "id": "751759f0cd30",
+      "parent_id": "code-explaineragent",
+      "name": "Dockerfile",
+      "path": "code-explaineragent/Dockerfile",
+      "is_directory": false,
+      "language": "text"
+    },
+    {
+      "id": "7e2682337182",
+      "parent_id": "code-explaineragent",
+      "name": "graph.py",
+      "path": "code-explaineragent/graph.py",
+      "is_directory": false,
+      "language": "python"
+    },
+    {
+      "id": "27bb711773f2",
+      "parent_id": "code-explaineragent",
+      "name": ".dockerignore",
+      "path": "code-explaineragent/.dockerignore",
+      "is_directory": false,
+      "language": "text"
+    },
+    {
+      "id": "2d64c62f7186",
+      "parent_id": "code-explaineragent",
+      "name": ".gitignore",
+      "path": "code-explaineragent/.gitignore",
+      "is_directory": false,
+      "language": "text"
+    },
+    {
+      "id": "fa28a84f95a0",
+      "parent_id": "code-explaineragent",
+      "name": ".env",
+      "path": "code-explaineragent/.env",
+      "is_directory": false,
+      "language": "text"
+    },
+    {
+      "id": "76b2c805bcc0",
+      "parent_id": "code-explaineragent",
+      "name": "app.py",
+      "path": "code-explaineragent/app.py",
+      "is_directory": false,
+      "language": "python"
+    },
+    {
+      "id": "1251c6cb8ae6",
+      "parent_id": "code-explaineragent",
+      "name": "docker-compose.yml",
+      "path": "code-explaineragent/docker-compose.yml",
+      "is_directory": false,
+      "language": "text"
+    },
+    {
+      "id": "c410a026ed63",
+      "parent_id": "code-explaineragent",
+      "name": "prompt.py",
+      "path": "code-explaineragent/prompt.py",
+      "is_directory": false,
+      "language": "python"
+    },
+    {
+      "id": "95ae7e6463ab",
+      "parent_id": "code-explaineragent",
+      "name": "nodes.py",
+      "path": "code-explaineragent/nodes.py",
+      "is_directory": false,
+      "language": "python"
+    },
+    {
+      "id": "45943fc9a1a4",
+      "parent_id": "code-explaineragent",
+      "name": "state.py",
+      "path": "code-explaineragent/state.py",
+      "is_directory": false,
+      "language": "python"
+    }
+  ]
+}

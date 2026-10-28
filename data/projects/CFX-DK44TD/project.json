@@ -1,0 +1,36 @@
+{
+  "project_id": "CFX-DK44TD",
+  "name": "Suresh Rajpoot's workspace",
+  "owner_id": "U-G103GFSJ",
+  "created_at": 1793165093.737039,
+  "updated_at": 1793165093.7647738,
+  "language": "python",
+  "members": {
+    "U-G103GFSJ": {
+      "id": "U-G103GFSJ",
+      "name": "Suresh Rajpoot",
+      "device": "This device",
+      "role": "host"
+    }
+  },
+  "filesystem": [
+    {
+      "id": "52b9237e7c6f",
+      "parent_id": "",
+      "name": "main.py",
+      "path": "main.py",
+      "is_directory": false,
+      "language": "python",
+      "created_at": 1793165093.745114
+    },
+    {
+      "id": "19bf3353c1fc",
+      "parent_id": "",
+      "name": "README.md",
+      "path": "README.md",
+      "is_directory": false,
+      "language": "markdown",
+      "created_at": 1793165093.75693
+    }
+  ]
+}

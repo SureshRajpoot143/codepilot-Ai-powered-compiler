@@ -1,0 +1,36 @@
+{
+  "project_id": "CFX-25LZVM",
+  "name": "Suresh Rajpoot's workspace",
+  "owner_id": "U-G103GFSJ",
+  "created_at": 1793165935.878206,
+  "updated_at": 1793165935.9038239,
+  "language": "python",
+  "members": {
+    "U-G103GFSJ": {
+      "id": "U-G103GFSJ",
+      "name": "Suresh Rajpoot",
+      "device": "This device",
+      "role": "host"
+    }
+  },
+  "filesystem": [
+    {
+      "id": "cb73b7c20b75",
+      "parent_id": "",
+      "name": "main.py",
+      "path": "main.py",
+      "is_directory": false,
+      "language": "python",
+      "created_at": 1793165935.8827462
+    },
+    {
+      "id": "7c72608c1d70",
+      "parent_id": "",
+      "name": "README.md",
+      "path": "README.md",
+      "is_directory": false,
+      "language": "markdown",
+      "created_at": 1793165935.896238
+    }
+  ]
+}

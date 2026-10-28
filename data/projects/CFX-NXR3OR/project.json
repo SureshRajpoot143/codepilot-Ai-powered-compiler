@@ -1,0 +1,68 @@
+{
+  "project_id": "CFX-NXR3OR",
+  "name": "Suresh Rajpoot's workspace",
+  "owner_id": "U-G103GFSJ",
+  "created_at": 1791038224.126616,
+  "updated_at": 1791038295.343642,
+  "members": {
+    "U-G103GFSJ": {
+      "id": "U-G103GFSJ",
+      "name": "Suresh Rajpoot",
+      "device": "This device",
+      "role": "host"
+    },
+    "U-KI2HBSMO": {
+      "id": "U-KI2HBSMO",
+      "name": "Ssr",
+      "device": "Mobile",
+      "role": "editor"
+    }
+  },
+  "filesystem": [
+    {
+      "id": "edcb41c28708",
+      "parent_id": "",
+      "name": "main.py",
+      "path": "main.py",
+      "is_directory": false,
+      "language": "python",
+      "created_at": 1791038224.1306329
+    },
+    {
+      "id": "d5ccdfccc14b",
+      "parent_id": "",
+      "name": "utils.py",
+      "path": "utils.py",
+      "is_directory": false,
+      "language": "python",
+      "created_at": 1791038224.141705
+    },
+    {
+      "id": "8dd58c05cf1e",
+      "parent_id": "src/auth",
+      "name": "login.py",
+      "path": "src/auth/login.py",
+      "is_directory": false,
+      "language": "python",
+      "created_at": 1791038224.1522582
+    },
+    {
+      "id": "c6b933cde4f8",
+      "parent_id": "database",
+      "name": "connection.py",
+      "path": "database/connection.py",
+      "is_directory": false,
+      "language": "python",
+      "created_at": 1791038224.163014
+    },
+    {
+      "id": "dc03a178f29c",
+      "parent_id": "",
+      "name": "README.md",
+      "path": "README.md",
+      "is_directory": false,
+      "language": "markdown",
+      "created_at": 1791038224.173951
+    }
+  ]
+}

@@ -1,0 +1,150 @@
+{
+  "project_id": "CFX-V4QCAE",
+  "name": "You's workspace",
+  "owner_id": "U-G103GFSJ",
+  "created_at": 1789919604.1594582,
+  "updated_at": 1793090855.1937878,
+  "members": {
+    "U-G103GFSJ": {
+      "id": "U-G103GFSJ",
+      "name": "You",
+      "device": "This device",
+      "role": "host"
+    }
+  },
+  "filesystem": [
+    {
+      "id": "068ec37213c5",
+      "parent_id": "",
+      "name": "main.py",
+      "path": "main.py",
+      "is_directory": false,
+      "language": "python",
+      "created_at": 1789919604.164382
+    },
+    {
+      "id": "3d40218fd105",
+      "parent_id": "",
+      "name": "utils.py",
+      "path": "utils.py",
+      "is_directory": false,
+      "language": "python",
+      "created_at": 1789919604.1786408
+    },
+    {
+      "id": "0ed738b36dd1",
+      "parent_id": "src/auth",
+      "name": "login.py",
+      "path": "src/auth/login.py",
+      "is_directory": false,
+      "language": "python",
+      "created_at": 1789919604.1905558
+    },
+    {
+      "id": "0955f75c1f57",
+      "parent_id": "database",
+      "name": "connection.py",
+      "path": "database/connection.py",
+      "is_directory": false,
+      "language": "python",
+      "created_at": 1789919604.202029
+    },
+    {
+      "id": "dd25137b3886",
+      "parent_id": "",
+      "name": "README.md",
+      "path": "README.md",
+      "is_directory": false,
+      "language": "markdown",
+      "created_at": 1789919604.2139468
+    },
+    {
+      "id": "79f0a83b617b",
+      "parent_id": "",
+      "name": ".dockerignore",
+      "path": ".dockerignore",
+      "is_directory": false,
+      "language": "text"
+    },
+    {
+      "id": "f7d13a46e84a",
+      "parent_id": "",
+      "name": ".gitignore",
+      "path": ".gitignore",
+      "is_directory": false,
+      "language": "text"
+    },
+    {
+      "id": "a4e1410b6a19",
+      "parent_id": "",
+      "name": "Dockerfile",
+      "path": "Dockerfile",
+      "is_directory": false,
+      "language": "text"
+    },
+    {
+      "id": "487f9e6d1ede",
+      "parent_id": "",
+      "name": "app.py",
+      "path": "app.py",
+      "is_directory": false,
+      "language": "python"
+    },
+    {
+      "id": "a28881efaa71",
+      "parent_id": "",
+      "name": "config.py",
+      "path": "config.py",
+      "is_directory": false,
+      "language": "python"
+    },
+    {
+      "id": "a43c4ee15e7d",
+      "parent_id": "",
+      "name": "docker-compose.yml",
+      "path": "docker-compose.yml",
+      "is_directory": false,
+      "language": "text"
+    },
+    {
+      "id": "ca94f278838e",
+      "parent_id": "",
+      "name": "graph.py",
+      "path": "graph.py",
+      "is_directory": false,
+      "language": "python"
+    },
+    {
+      "id": "ca68408fbd67",
+      "parent_id": "",
+      "name": "nodes.py",
+      "path": "nodes.py",
+      "is_directory": false,
+      "language": "python"
+    },
+    {
+      "id": "e70a3622cf40",
+      "parent_id": "",
+      "name": "prompt.py",
+      "path": "prompt.py",
+      "is_directory": false,
+      "language": "python"
+    },
+    {
+      "id": "c859f62044ba",
+      "parent_id": "",
+      "name": "requirements.txt",
+      "path": "requirements.txt",
+      "is_directory": false,
+      "language": "text"
+    },
+    {
+      "id": "f3a5914e0576",
+      "parent_id": "",
+      "name": "state.py",
+      "path": "state.py",
+      "is_directory": false,
+      "language": "python"
+    }
+  ]
+}

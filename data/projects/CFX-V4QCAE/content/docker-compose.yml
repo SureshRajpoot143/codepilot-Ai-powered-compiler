@@ -1,0 +1,12 @@
+version: "3.9"
+
+services:
+  code-agent:
+    build: .
+    container_name: code-explainer-agent
+
+    env_file:
+      - .env
+
+    stdin_open: true
+    tty: true

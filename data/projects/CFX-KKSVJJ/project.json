@@ -1,0 +1,42 @@
+{
+  "project_id": "CFX-KKSVJJ",
+  "name": "Suresh Rajpoot's workspace",
+  "owner_id": "U-G103GFSJ",
+  "created_at": 1793096063.309045,
+  "updated_at": 1793096218.217403,
+  "language": "python",
+  "members": {
+    "U-G103GFSJ": {
+      "id": "U-G103GFSJ",
+      "name": "Suresh Rajpoot",
+      "device": "This device",
+      "role": "host"
+    },
+    "U-XB6H9QL3": {
+      "id": "U-XB6H9QL3",
+      "name": "hii",
+      "device": "This device",
+      "role": "editor"
+    }
+  },
+  "filesystem": [
+    {
+      "id": "7ab2e20e2997",
+      "parent_id": "",
+      "name": "main.py",
+      "path": "main.py",
+      "is_directory": false,
+      "language": "python",
+      "created_at": 1793096063.3135629
+    },
+    {
+      "id": "e7ce9c6accbe",
+      "parent_id": "",
+      "name": "README.md",
+      "path": "README.md",
+      "is_directory": false,
+      "language": "markdown",
+      "created_at": 1793096063.328264
+    }
+  ]
+}

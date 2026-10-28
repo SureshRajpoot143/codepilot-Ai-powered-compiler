@@ -1,0 +1,68 @@
+{
+  "project_id": "CFX-C3AT1J",
+  "name": "hr's workspace",
+  "owner_id": "U-CRF51A3E",
+  "created_at": 1789918501.323031,
+  "updated_at": 1789918600.526349,
+  "members": {
+    "U-CRF51A3E": {
+      "id": "U-CRF51A3E",
+      "name": "hr",
+      "device": "This device",
+      "role": "host"
+    },
+    "U-RRW5TECH": {
+      "id": "U-RRW5TECH",
+      "name": "Man",
+      "device": "Mobile",
+      "role": "editor"
+    }
+  },
+  "filesystem": [
+    {
+      "id": "0ef5086cfd03",
+      "parent_id": "",
+      "name": "main.py",
+      "path": "main.py",
+      "is_directory": false,
+      "language": "python",
+      "created_at": 1789918501.326808
+    },
+    {
+      "id": "66cfec256081",
+      "parent_id": "",
+      "name": "utils.py",
+      "path": "utils.py",
+      "is_directory": false,
+      "language": "python",
+      "created_at": 1789918501.3400419
+    },
+    {
+      "id": "b57d0e544f7f",
+      "parent_id": "src/auth",
+      "name": "login.py",
+      "path": "src/auth/login.py",
+      "is_directory": false,
+      "language": "python",
+      "created_at": 1789918501.352416
+    },
+    {
+      "id": "28f84e54f01e",
+      "parent_id": "database",
+      "name": "connection.py",
+      "path": "database/connection.py",
+      "is_directory": false,
+      "language": "python",
+      "created_at": 1789918501.36496
+    },
+    {
+      "id": "6d999cfe32ce",
+      "parent_id": "",
+      "name": "README.md",
+      "path": "README.md",
+      "is_directory": false,
+      "language": "markdown",
+      "created_at": 1789918501.377922
+    }
+  ]
+}

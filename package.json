@@ -4,7 +4,7 @@
   "scripts": {
     "dev": "npm --prefix frontend run dev",
     "build": "npm --prefix frontend run build",
-    "collab": "HOST=0.0.0.0 PORT=1234 y-websocket"
+    "collab": "node collab-server.cjs"
   },
   "dependencies": {
     "mongodb": "^7.5.0",
