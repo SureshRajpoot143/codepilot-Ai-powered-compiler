@@ -1,0 +1,36 @@
+{
+  "project_id": "CFX-5Q317D",
+  "name": "Ritika's workspace",
+  "owner_id": "U-L0C8P6MD",
+  "created_at": 1793178670.091213,
+  "updated_at": 1793178670.117613,
+  "language": "python",
+  "members": {
+    "U-L0C8P6MD": {
+      "id": "U-L0C8P6MD",
+      "name": "Ritika",
+      "device": "Mobile",
+      "role": "host"
+    }
+  },
+  "filesystem": [
+    {
+      "id": "4e9d4573b7ad",
+      "parent_id": "",
+      "name": "main.py",
+      "path": "main.py",
+      "is_directory": false,
+      "language": "python",
+      "created_at": 1793178670.0960052
+    },
+    {
+      "id": "c8633223e0e1",
+      "parent_id": "",
+      "name": "README.md",
+      "path": "README.md",
+      "is_directory": false,
+      "language": "markdown",
+      "created_at": 1793178670.1089761
+    }
+  ]
+}

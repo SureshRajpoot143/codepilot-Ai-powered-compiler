@@ -3,7 +3,7 @@
   "name": "Suresh Rajpoot's workspace",
   "owner_id": "U-G103GFSJ",
   "created_at": 1793177571.641613,
-  "updated_at": 1793177571.674454,
+  "updated_at": 1793178455.820122,
   "language": "python",
   "members": {
     "U-G103GFSJ": {
@@ -11,6 +11,12 @@
       "name": "Suresh Rajpoot",
       "device": "This device",
       "role": "host"
+    },
+    "U-L0C8P6MD": {
+      "id": "U-L0C8P6MD",
+      "name": "Ritika",
+      "device": "Mobile",
+      "role": "editor"
     }
   },
   "filesystem": [
@@ -31,6 +37,48 @@
       "is_directory": false,
       "language": "markdown",
       "created_at": 1793177571.6666932
+    },
+    {
+      "id": "1f956d1238f7",
+      "parent_id": "",
+      "name": "Desktop",
+      "path": "Desktop",
+      "is_directory": true,
+      "language": "folder",
+      "created_at": 1793178447.735189
+    },
+    {
+      "id": "c263f646c121",
+      "parent_id": "Desktop",
+      "name": "joke-generate langgraph",
+      "path": "Desktop/joke-generate langgraph",
+      "is_directory": true,
+      "language": "folder",
+      "created_at": 1793178447.7396321
+    },
+    {
+      "id": "cea0ab583f3c",
+      "parent_id": "Desktop/joke-generate langgraph",
+      "name": ".gitignore",
+      "path": "Desktop/joke-generate langgraph/.gitignore",
+      "is_directory": false,
+      "language": "text"
+    },
+    {
+      "id": "3f2192836b2a",
+      "parent_id": "Desktop/joke-generate langgraph",
+      "name": "README.md",
+      "path": "Desktop/joke-generate langgraph/README.md",
+      "is_directory": false,
+      "language": "markdown"
+    },
+    {
+      "id": "ca40fb2da580",
+      "parent_id": "Desktop/joke-generate langgraph",
+      "name": "app.py",
+      "path": "Desktop/joke-generate langgraph/app.py",
+      "is_directory": false,
+      "language": "python"
     }
   ]
 }
