@@ -34,40 +34,31 @@ services:
     buildCommand: npm install
     startCommand: node collab-server.cjs
     envVars:
-      - key: DATA_DIR
-        value: /var/data # persistent disk mount point (see disk below)
       - key: HOST
         value: 0.0.0.0
       - key: SAVE_DEBOUNCE_WAIT
         value: "2000"
       - key: SAVE_DEBOUNCE_MAXWAIT
         value: "10000"
-    disk:
-      name: collab-data
-      mountPath: /var/data
-      sizeGB: 1
 
   # Vite + React frontend (static build served by CDN)
   - type: web
     name: codefix-ai-frontend
-    runtime: node
+    runtime: static
     rootDir: frontend
-    plan: free
     buildCommand: npm install && npm run build
     buildFilter:
       paths:
         - frontend/**
     staticPublishPath: dist
     pullRequestPreviewsEnabled: true
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: VITE_COLLAB_URL
+        sync: false # e.g. wss://codefix-ai-collab.onrender.com
     routes:
       - type: rewrite
         source: /*
         destination: /index.html
-    envVars:
-      - key: NODE_VERSION
-        value: "20"
-      - key: VITE_BACKEND_URL
-        sync: false # not consumed by the app (fetches use relative /api); remove or wire up a reverse proxy
-      - key: VITE_COLLAB_URL
-        sync: false # e.g. wss://codefix-ai-collab.onrender.com
 
