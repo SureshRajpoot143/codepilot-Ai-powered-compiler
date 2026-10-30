@@ -67,6 +67,7 @@ services:
       - key: NODE_VERSION
         value: "20"
       - key: VITE_BACKEND_URL
-        sync: false # e.g. https://codefix-ai-backend.onrender.com
+        sync: false # not consumed by the app (fetches use relative /api); remove or wire up a reverse proxy
+      - key: VITE_COLLAB_URL
+        sync: false # e.g. wss://codefix-ai-collab.onrender.com
 
-envVersion: 1
