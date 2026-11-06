@@ -272,7 +272,7 @@ const remoteStates=(awareness:any,doc?:Y.Doc)=>{
   }
   const flushPaths=async(prefix:string)=>{
    const affected=tabsRef.current.filter(t=>t.path===prefix||t.path.startsWith(prefix+'/'))
-   await Promise.all(affected.map(async t=>{const e=openDocsRef.current.get(t.path);const content=e?e.yt.toString():t.code;try{await api(`/workspace/${room}/file`,{method:'PUT',body:JSON.stringify({path:t.path,content,language:t.language})})}catch{}}))
+   await Promise.all(affected.map(async t=>{const e=openDocsRef.current.get(t.path);const content=e?e.yt.toString():t.code;try{await api(`/workspace/${room}/file?actor_id=${meId}`,{method:'PUT',body:JSON.stringify({path:t.path,content,language:t.language})})}catch{}}))
   }
   const closePathsLocal=(prefix:string)=>{
    const affected=tabsRef.current.filter(t=>t.path===prefix||t.path.startsWith(prefix+'/'))
@@ -356,7 +356,7 @@ const remoteStates=(awareness:any,doc?:Y.Doc)=>{
  const rejectJoin=async(m:Member)=>{try{await api(`/rooms/${room}/members/${m.id}/reject?host_id=${meId}`,{method:'POST'})}catch{}setPending(p=>p.filter(x=>x.id!==m.id))}
  const approveLanguage=async(req:{id:string;name:string;from:string;to:string;language:string})=>{try{await api(`/rooms/${room}/language/${req.id}/approve?host_id=${meId}`,{method:'POST'});setFsError('');renamePathInTree(req.from,req.to);const m=ytree.get(req.to) as Y.Map<unknown>|undefined;if(m)m.set('language',req.language)}catch(e){setFsError(e instanceof Error?e.message:String(e))}setLangPending(p=>p.filter(x=>x.id!==req.id))}
  const rejectLanguage=async(req:{id:string;name:string;from:string;to:string;language:string})=>{try{await api(`/rooms/${room}/language/${req.id}/reject?host_id=${meId}`,{method:'POST'})}catch{}setLangPending(p=>p.filter(x=>x.id!==req.id))}
- const saveActive=async()=>{const t=tabs[active];if(!t)return;const entry=openDocsRef.current.get(t.path);const code=entry?entry.yt.toString():t.code;addActivity(`💾 Saved ${t.path}`);try{await api(`/workspace/${room}/file`,{method:'PUT',body:JSON.stringify({path:t.path,content:code,language:t.language})});setFsError('')}catch(e){setFsError(e instanceof Error?e.message:String(e))}}
+ const saveActive=async()=>{const t=tabs[active];if(!t)return;const entry=openDocsRef.current.get(t.path);const code=entry?entry.yt.toString():t.code;addActivity(`💾 Saved ${t.path}`);try{await api(`/workspace/${room}/file?actor_id=${meId}`,{method:'PUT',body:JSON.stringify({path:t.path,content:code,language:t.language})});setFsError('')}catch(e){setFsError(e instanceof Error?e.message:String(e))}}
  useEffect(()=>{const h=(e:KeyboardEvent)=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='s'){e.preventDefault();saveActive()}};window.addEventListener('keydown',h);return()=>window.removeEventListener('keydown',h)},[room,joined,active,tabs])
  useEffect(()=>{if(!joined)return;const iv=setInterval(()=>sendRoom('editor:activefile',{path:activePath()}),15000);return()=>clearInterval(iv)},[joined])
  useEffect(()=>{
@@ -405,7 +405,7 @@ const remoteStates=(awareness:any,doc?:Y.Doc)=>{
    while(nodes.some(n=>n.path===path)){n++;path=`${base}${n}.${extensions[lang]}`}
    addNodeInTree('',baseName(path),false,lang)
    try{await api(`/workspace/${room}/nodes`,{method:'POST',body:JSON.stringify({parent:'',name:baseName(path),is_directory:false,language:lang})})}catch{}
-   try{await api(`/workspace/${room}/file`,{method:'PUT',body:JSON.stringify({path,content:fixed,language:lang})})}catch{}
+   try{await api(`/workspace/${room}/file?actor_id=${meId}`,{method:'PUT',body:JSON.stringify({path,content:fixed,language:lang})})}catch{}
    openPath(path)
   }
   setVersion(v=>v+1);setAskOpen(false);setPanel('Output');sendRoom('chat:message',{who:'CodeFix AI',text:`${name} imported code into ${path}.`});addActivity(`${name} imported code into ${path}`)}
