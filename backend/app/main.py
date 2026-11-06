@@ -424,9 +424,19 @@ async def run_with_jdoodle(body: Execute) -> dict[str, Any]:
         "compileOnly": False,
     }
     try:
-        async with httpx.AsyncClient(timeout=25) as client:
-            response = await client.post("https://api.jdoodle.com/v1/execute", json=payload)
-            response.raise_for_status()
+        # Generous timeout + one retry: Render free-tier instances wake from sleep
+        # and the first outbound connection to JDoodle can drop silently.
+        async with httpx.AsyncClient(timeout=60) as client:
+            response = None
+            for attempt in range(2):
+                try:
+                    response = await client.post("https://api.jdoodle.com/v1/execute", json=payload)
+                    response.raise_for_status()
+                    break
+                except httpx.TransportError as exc:
+                    detail = f"{type(exc).__name__}: {exc or 'connection failed'}"
+                    if attempt == 1:
+                        raise HTTPException(502, f"JDoodle request failed: {detail}") from exc
             data = response.json()
     except httpx.HTTPStatusError as exc:
         detail = exc.response.text
