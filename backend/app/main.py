@@ -164,12 +164,7 @@ async def projects(owner_id: str = "", owner_name: str = ""):
 async def room(rid: str): return get_room(rid)
 @app.post("/api/rooms/{rid}/join")
 async def request_join(rid: str, member: Member):
-    r = get_room(rid)
-    # Existing members reconnect instantly (page refresh) instead of re-queued.
-    existing = r.members.get(member.id)
-    if existing:
-        return {"status": "accepted", "role": existing.role, "language": r.language}
-    r.pending[member.id] = member
+    r = get_room(rid); r.pending[member.id] = member
     store.upsert_user(member.id, member.name)
     await broadcast(rid, "room:join_request", member.model_dump()); return {"status": "pending"}
 @app.post("/api/rooms/{rid}/members/{uid}/approve")
