@@ -51,9 +51,79 @@ async function api(path:string,opts:RequestInit={}){
  const raw=await res.text();let data:any={};try{data=raw?JSON.parse(raw):{}}catch{}
  if(!res.ok)throw new Error(data.detail||`Request failed (${res.status})`);return data
 }
+// ---- Browser-side execution fallback (no JDoodle needed) ----
+type ExecResult={status:string;stdout:string;stderr:string;time?:string;memory?:string}
+let pyodideLoading:Promise<any>|null=null
+const loadPyodideOnce=()=>{
+ if(pyodideLoading)return pyodideLoading
+ pyodideLoading=new Promise((resolve,reject)=>{
+  const s=document.createElement('script')
+  s.src='https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js'
+  s.onload=async()=>{
+   try{resolve(await (window as any).loadPyodide({indexURL:'https://cdn.jsdelivr.net/pyodide/v0.26.2/full/'}))}
+   catch(e){reject(e);pyodideLoading=null}}
+  s.onerror=()=>{reject(new Error('Could not download the in-browser Python runtime'));pyodideLoading=null}
+  document.head.appendChild(s)})
+ return pyodideLoading}
+
+const runWasmPython=async(code:string,stdin:string):Promise<ExecResult>=>{
+ const py=await loadPyodideOnce()
+ const out:string[]=[],errs:string[]=[]
+ py.setStdout({batched:(s:any)=>out.push(String(s))})
+ py.setStderr({batched:(s:any)=>{const l=String(s).trim();if(l)errs.push(l)}})
+ const lines=stdin.split(/\r?\n/).filter(l=>l.length>0)
+ py.globals.set('__cfx_code',code)
+ py.globals.set('__cfx_lines',JSON.stringify(lines))
+ try{
+  try{await py.loadPackagesFromImports(code)}catch{}
+  py.runPython(`import json, sys, builtins
+_l=json.loads(__cfx_lines)
+_i=[0]
+def _cfx_input(prompt=''):
+    sys.stdout.write(prompt)
+    if _i[0] >= len(_l):
+        raise EOFError("input(): no more lines - put one input value per line in the Input box")
+    v=_l[_i[0]]; _i[0]+=1
+    sys.stdout.write(v); sys.stdout.write("\\n")
+    return v
+builtins.input=_cfx_input
+exec(compile(__cfx_code, "main.py", "exec"), {"__name__": "__main__"})
+`)
+  return {status:'Success',stdout:out.join('\n'),stderr:errs.join('\n'),time:'—',memory:'—'}
+ }catch(e:any){
+  let err=e?.message?e.message:String(e)
+  err=err.replace(/^PythonError: /,'')
+  if(/EOFError/i.test(err))err+='\n\nTip: put one input value per line in the Input box, then Run again.'
+  return {status:'Failed',stdout:out.join('\n'),stderr:err,time:'—',memory:'—'}
+ }
+}
+const runWasmJs=(code:string,stdin:string):Promise<ExecResult>=>{
+ return new Promise(resolve=>{
+  const out:string[]=[]
+  const lines=stdin.split(/\r?\n/).filter(l=>l.length>0)
+  const src=`const out=[];const flush=()=>{if(out.length)postMessage({cfx:out.splice(0)})};
+const show=(...a)=>{out.push(a.map(v=>{try{return typeof v==='object'?JSON.stringify(v,null,2):String(v)}catch{return String(v)}}).join(' '));flush()};
+console.log=show;console.info=show;console.warn=show;console.error=show;
+const stdinLines=${JSON.stringify(lines)};let _i=0;
+const input=()=>{const v=stdinLines[_i++];if(v===undefined)throw new Error("input: no more lines - one value per line in the Input box");return v};
+try{(0,eval)(CODE_PLACEHOLDER);flush();postMessage({err:null})}
+catch(e){flush();postMessage({err:e.stack||String(e)})}
+`.replace('CODE_PLACEHOLDER',JSON.stringify(code))
+  const w=new Worker(URL.createObjectURL(new Blob([src],{type:'text/javascript'})))
+  const finish=(r:ExecResult)=>{clearTimeout(kill);w.terminate();resolve(r)}
+  const kill=setTimeout(()=>finish({status:'Failed',stdout:out.join('\n'),stderr:'Timed out after 10 s — or an infinite loop.'}),10000)
+  w.onmessage=(m:any)=>{
+   const d=m.data as {cfx?:string[];err?:string|null}
+   if(d.cfx)out.push(...d.cfx)
+   if(d.err)finish({status:'Failed',stdout:out.join('\n'),stderr:String(d.err).replace(/^Uncaught /,'')})
+   else if(d.err!==undefined)finish({status:'Success',stdout:out.join('\n'),stderr:'',time:'—',memory:'—'})
+  }
+  w.onerror=(e:any)=>finish({status:'Failed',stdout:out.join('\n'),stderr:e.message||'Worker error'})
+ })
+}
 function App(){
  const [room,setRoom]=useState(linkedRoom||''),[created,setCreated]=useState(false)
- const [route,setRoute]=useState<'landing'|'guest'>(linkedRoom?'guest':'landing'),[joinCode,setJoinCode]=useState('')
+  const [route,setRoute]=useState<'landing'|'guest'>(linkedRoom?'guest':'landing'),[joinCode,setJoinCode]=useState('')
  const [name,setName]=useState('You'),[role,setRole]=useState<Role>('guest'),[joined,setJoined]=useState(false)
  const [theme,setTheme]=useState<'light'|'dark'>(savedTheme)
  useEffect(()=>{document.documentElement.dataset.theme=theme;localStorage.setItem('cfx_theme',theme)},[theme])
@@ -367,7 +437,17 @@ const remoteStates=(awareness:any,doc?:Y.Doc)=>{
  },[nodes,joined,sessionLanguage])
  useEffect(()=>{const t=setTimeout(syncBinding,60);return()=>clearTimeout(t)},[tabs,active])
  const currentCode=()=>{const t=tabsRef.current[activeRef.current];if(!t)return'';const entry=openDocsRef.current.get(t.path);return entry?entry.yt.toString():t.code}
- const run=async()=>{setRunning(true);setCanDownload(false);const t=tabs[active];if(!t){setRunning(false);return};setOutput(`${name} is running the latest shared version…`);setPanel('Output');sendRoom('execution:start',{user:name});try{const result=await api('/execute',{method:'POST',body:JSON.stringify({code:currentCode(),language:t.language,stdin})});sendRoom('execution:result',result);showResult(result);addActivity('Code executed')}catch(error){setOutput(`Execution unavailable\n\n${error instanceof Error?error.message:'Could not contact compiler.'}\n\nStart FastAPI and configure JDOODLE_CLIENT_ID and JDOODLE_CLIENT_SECRET for real compiler output.`)}finally{setRunning(false)}}
+  const run=async()=>{setRunning(true);setCanDownload(false);const t=tabs[active];if(!t){setRunning(false);return};const code=currentCode();setOutput(`${name} is running the latest shared version…`);setPanel('Output');sendRoom('execution:start',{user:name});try{const result=await api('/execute',{method:'POST',body:JSON.stringify({code,language:t.language,stdin})});sendRoom('execution:result',result);showResult(result);addActivity('Code executed')}catch(error){
+  const msg=error instanceof Error?error.message:String(error)
+  if(t.language==='python'||t.language==='javascript'){
+   setOutput(`${msg}\n\nFalling back to in-browser execution — no JDoodle needed…`)
+   try{
+    const res=t.language==='python'?await runWasmPython(code,stdin):await runWasmJs(code,stdin)
+    if(res.status==='Success'){sendRoom('execution:result',{...res,note:'in-browser'});showResult(res);addActivity('Code executed (in-browser)');setCanDownload(true)}
+    else{showResult(res);setOutput(`In-browser run failed\n\n${res.stderr}\n\n${t.language==='python'?'':res.stdout}`)}
+   }catch(wasm:any){setOutput(`${msg}\n\nIn-browser fallback unavailable: ${String(wasm?.message||wasm)||'unknown error'}`)}
+  }else setOutput(`Execution unavailable\n\n${msg}\n\nStart FastAPI and configure JDOODLE_CLIENT_ID and JDOODLE_CLIENT_SECRET for real compiler output.`)
+ }finally{setRunning(false)}}
   const runProject=async()=>{if(!entry)return;setRunning(true);setCanDownload(false);setOutput(`${name} is running project entry ${entry}…`);setPanel('Output');try{const result=await api(`/rooms/${room}/execute-project?actor_id=${meId}`,{method:'POST',body:JSON.stringify({entry,stdin})});showResult(result);addActivity(`Ran project: ${result.entry||entry}`)}catch(error){setOutput(`Project run unavailable\n\n${error instanceof Error?error.message:'Could not start the run.'}\n\nThe whole project runs on the backend machine (like VS Code) — needs the runtime installed there.`)}finally{setRunning(false)}}
   const importFiles=async(items:{path:string;content:string}[])=>{if(!items.length)return;setImporting(true);setImportMsg('');try{const r=await api(`/workspace/${room}/import/json?actor_id=${meId}`,{method:'POST',body:JSON.stringify({files:items})});await resyncTree();setImportMsg('✓ Imported '+r.added+' files'+(r.skipped&&r.skipped.length?' ('+r.skipped.length+' skipped)':''));addActivity('Imported project — '+r.added+' files')}catch(error){setImportMsg('⚠ '+String(error instanceof Error?error.message:error))}finally{setImporting(false)}}
   const onImportPicked=(e:any)=>{const files=[...(e.target.files||[])].filter((f:any)=>f.webkitRelativePath||f.name);Promise.all(files.map(async(f:any)=>{const text=await f.text();return{path:(f.webkitRelativePath||f.name).replace(/^[\/]+/,''),content:text}})).then(items=>{e.target.value='';importFiles(items)})}
