@@ -131,3 +131,6 @@ html[data-theme="light"] .session-lang select{background:#fff;border-color:#cfd2
 html[data-theme="light"] .lang-request>div{background:#fff;border-color:#b8a6ff;box-shadow:0 18px 50px #1b1c2233}
 html[data-theme="light"] .lang-request span{color:#5b48b8}
 html[data-theme="light"] .lang-request p{color:#565863}
+
+.console-in{display:flex;align-items:center;gap:9px;margin-top:9px}.console-in .prompt{color:#8d90a1;font-size:13px}.console-in input{flex:1;background:#0b0c11;border:1px solid #6f58cf;border-radius:8px;color:#e6e8f0;font-family:'DM Mono',monospace;font-size:13px;padding:9px 12px;outline:none}.console-in input:focus{border-color:#967bf8}.console-in button{padding:9px 14px;border-radius:8px;background:#6f58cf;color:#fff;font-weight:700;font-size:12px}
+html[data-theme="light"] .console-in input{background:#fff;border-color:#b8a6ff;color:#1b1c22}
