@@ -52,41 +52,5 @@
     "created_at": 1793946945.0126421,
     "name": "Guest",
     "updated_at": 1793946945.0126421
-  },
-  "refreshtest": {
-    "id": "refreshtest",
-    "created_at": 1793947703.260042,
-    "name": "Host",
-    "updated_at": 1793947703.260042
-  },
-  "rt-host": {
-    "id": "rt-host",
-    "created_at": 1793947713.882696,
-    "name": "Host",
-    "updated_at": 1793947714.141192
-  },
-  "newg": {
-    "id": "newg",
-    "created_at": 1793947714.205912,
-    "name": "G",
-    "updated_at": 1793947714.2749949
-  },
-  "rt2": {
-    "id": "rt2",
-    "created_at": 1793947739.3616068,
-    "name": "Host",
-    "updated_at": 1793947739.3616068
-  },
-  "g1": {
-    "id": "g1",
-    "created_at": 1793947739.561022,
-    "name": "G",
-    "updated_at": 1793947739.617016
-  },
-  "gX": {
-    "id": "gX",
-    "created_at": 1793947739.774583,
-    "name": "X",
-    "updated_at": 1793947739.774583
   }
 }
