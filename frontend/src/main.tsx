@@ -154,7 +154,7 @@ self.onmessage=async e=>{const d=e.data||{}
      if(Atomics.load(ctl,2))throw new Error('__cfx_abort__')
      if(Atomics.load(ctl,0)===1){
       const n=Atomics.load(ctl,1)
-      const s=new TextDecoder().decode(data.subarray(0,n))
+      const s=new TextDecoder().decode(data.slice(0,n))
       Atomics.store(ctl,0,0)
       return s
      }
