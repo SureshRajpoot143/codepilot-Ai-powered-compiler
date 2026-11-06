@@ -53,6 +53,8 @@ async function api(path:string,opts:RequestInit={}){
 }
 // ---- Browser-side execution fallback (no JDoodle needed) ----
 type ExecResult={status:string;stdout:string;stderr:string;time?:string;memory?:string}
+let interactiveEnv:{sendLine:(text:string)=>void}|null=null
+const setInteractiveCurrent=(e:{sendLine:(text:string)=>void}|null)=>{interactiveEnv=e}
 let pyodideLoading:Promise<any>|null=null
 const loadPyodideOnce=()=>{
  if(pyodideLoading)return pyodideLoading
@@ -66,10 +68,12 @@ const loadPyodideOnce=()=>{
   document.head.appendChild(s)})
  return pyodideLoading}
 
-const runWasmPython=async(code:string,stdin:string):Promise<ExecResult>=>{
+// Preloaded-lines pyodide run (no real-time input). Used when SharedArrayBuffer
+// is unavailable on the page.
+const baseRunWasmPython=async(code:string,stdin:string):Promise<ExecResult>=>{
  const py=await loadPyodideOnce()
  const out:string[]=[],errs:string[]=[]
- py.setStdout({batched:(s:any)=>out.push(String(s))})
+ py.setStdout({batched:(s:any)=>{if(out.length&&!out[out.length-1].endsWith('\n'))out.push('\n');out.push(String(s)+'\n')}})
  py.setStderr({batched:(s:any)=>{const l=String(s).trim();if(l)errs.push(l)}})
  const lines=stdin.split(/\r?\n/).filter(l=>l.length>0)
  py.globals.set('__cfx_code',code)
@@ -89,13 +93,102 @@ def _cfx_input(prompt=''):
 builtins.input=_cfx_input
 exec(compile(__cfx_code, "main.py", "exec"), {"__name__": "__main__"})
 `)
-  return {status:'Success',stdout:out.join('\n'),stderr:errs.join('\n'),time:'—',memory:'—'}
+  return {status:'Success',stdout:out.join(''),stderr:errs.join('\n'),time:'—',memory:'—'}
  }catch(e:any){
   let err=e?.message?e.message:String(e)
   err=err.replace(/^PythonError: /,'')
   if(/EOFError/i.test(err))err+='\n\nTip: put one input value per line in the Input box, then Run again.'
-  return {status:'Failed',stdout:out.join('\n'),stderr:err,time:'—',memory:'—'}
+  return {status:'Failed',stdout:out.join(''),stderr:err,time:'—',memory:'—'}
  }
+}
+
+// Interactive Python in a Worker: input() blocks the worker thread via
+// SharedArrayBuffer while the page keeps collecting what the user types.
+const runWasmPython=(code:string,stdin:string,onInteractive:(active:boolean)=>void,onChunk?:(chunk:string)=>void):Promise<ExecResult>=>{
+ if(!(window as any).crossOriginIsolated||typeof SharedArrayBuffer==='undefined')
+  return baseRunWasmPython(code,stdin)
+ return new Promise(resolve=>{
+  const sab=new SharedArrayBuffer(16384)
+  const out:string[]=[],errs:string[]=[]
+  const pending:string[]=[]
+  for(const l of stdin.split(/\r?\n/))if(l.length>0)pending.push(l)
+  let waitingForInput=false,done=false
+  const ctl=new Int32Array(sab,0,4),data=new Uint8Array(sab,32)
+  const writeTo=(text:string)=>{
+   const bytes=new TextEncoder().encode(text)
+   if(bytes.length>16000)return
+   data.set(bytes);Atomics.store(ctl,1,bytes.length)
+   Atomics.store(ctl,0,1);Atomics.notify(ctl,0)
+  }
+  const pump=()=>{
+   if(done||!waitingForInput)return
+   if(!pending.length)return
+   waitingForInput=false;writeTo(pending.shift()!)
+  }
+  const sendLine=(text:string)=>{
+   if(done)return
+   if(waitingForInput){waitingForInput=false;writeTo(text)}
+   else pending.push(text)
+  }
+  setInteractiveCurrent({sendLine})
+  const finish=(r:ExecResult)=>{
+   if(done)return;done=true
+   setInteractiveCurrent(null);onInteractive(false)
+   try{Atomics.store(ctl,2,1);Atomics.notify(ctl,0)}catch{}
+   try{w.terminate()}catch{}
+   resolve(r)
+  }
+  const wsrc=`let SAB=null,pyr=null,ctl=null,data=null
+self.onmessage=async e=>{const d=e.data||{}
+ if(d.type==='init'){SAB=d.sab;ctl=new Int32Array(SAB,0,4);data=new Uint8Array(SAB,32)}
+ else if(d.type==='run'){
+  try{
+   importScripts(d.pyUrl)
+   pyr=await loadPyodide({indexURL:d.pyIdx})
+   pyr.setStdout({batched:s=>postMessage({chunk:String(s)+'\\n'})})
+   pyr.setStderr({batched:s=>{const l=String(s);if(l.trim())postMessage({errchunk:l})}})
+   const blockingLine=()=>{
+    postMessage({need:true})
+    for(;;){
+     Atomics.wait(ctl,0,0,1500)
+     if(Atomics.load(ctl,2))throw new Error('__cfx_abort__')
+     if(Atomics.load(ctl,0)===1){
+      const n=Atomics.load(ctl,1)
+      const s=new TextDecoder().decode(data.subarray(0,n))
+      Atomics.store(ctl,0,0)
+      return s
+     }
+    }
+   }
+   pyr.globals.set('__cfx_line',blockingLine)
+   pyr.globals.set('__cfx_code',d.code)
+   try{await pyr.loadPackagesFromImports(d.code)}catch{}
+   pyr.runPython("import builtins, sys\\ndef _in(p=''):\\n    sys.stdout.write(p); sys.stdout.flush()\\n    return __cfx_line()\\nbuiltins.input=_in\\nexec(compile(__cfx_code, 'main.py', 'exec'), {'__name__': '__main__'})")
+   postMessage({done:true,traceback:null})
+  }catch(e){
+   postMessage({done:true,traceback:String(e?.message||e).replace('PythonError: ','')||String(e?.message||e)})
+  }
+ }
+}`
+  const w=new Worker(URL.createObjectURL(new Blob([wsrc],{type:'text/javascript'})))
+  w.onmessage=(m:any)=>{
+   const d=m.data as {chunk?:string;errchunk?:string;need?:boolean;done?:boolean;traceback?:string|null}
+    if(d.chunk){out.push(d.chunk);onChunk?.(d.chunk)}
+   if(d.errchunk){errs.push(d.errchunk)}
+   if(d.need){waitingForInput=true;onInteractive(true);pump()}
+   if(d.done){
+    if(d.traceback&&d.traceback!=='__cfx_abort__'){
+     let err=d.traceback
+     if(/__cfx_abort__/i.test(err))err=''
+     finish({status:'Failed',stdout:out.join(''),stderr:(errs.join('')+'\n'+err).trim(),time:'—',memory:'—'})
+    }else finish({status:'Success',stdout:out.join(''),stderr:errs.join('').trim(),time:'—',memory:'—'})
+   }
+  }
+  w.onerror=(e:any)=>finish({status:'Failed',stdout:out.join(''),stderr:e.message||'Worker error',time:'—',memory:'—'})
+  w.postMessage({type:'init',sab})
+  const origin=location.origin
+  w.postMessage({type:'run',code,pyUrl:`${origin}/pyodide/pyodide.js`,pyIdx:`${origin}/pyodide/`})
+ })
 }
 const runWasmJs=(code:string,stdin:string):Promise<ExecResult>=>{
  return new Promise(resolve=>{
@@ -143,6 +236,7 @@ function App(){
  const [entry,setEntry]=useState('')
  const [importOpen,setImportOpen]=useState(false),[importTab,setImportTab]=useState<'upload'|'path'|'github'>('upload'),[importPath,setImportPath]=useState(''),[importUrl,setImportUrl]=useState(''),[importBranch,setImportBranch]=useState(''),[importing,setImporting]=useState(false),[importMsg,setImportMsg]=useState('')
  const [newNode,setNewNode]=useState<null|{parent:string;isDir:boolean}>(null),[newNodeName,setNewNodeName]=useState(''),[renaming,setRenaming]=useState<string|null>(null),[renameValue,setRenameValue]=useState(''),[fsError,setFsError]=useState(''),[treeReady,setTreeReady]=useState(false)
+ const [interactive,setInteractive]=useState(false)
  const editorRef=useRef<any>();const monacoRef=useRef<any>();const wsRef=useRef<WebSocket>();const creatorRef=useRef(false)
  const treeDoc=useMemo(()=>new Y.Doc(),[room]);const ytree=useMemo(()=>treeDoc.getMap('nodes'),[treeDoc])
  const openDocsRef=useRef<Map<string,ProviderGroup>>(new Map());const bindRef=useRef<{path:string;binding:MonacoBinding}|null>(null)
@@ -442,7 +536,7 @@ const remoteStates=(awareness:any,doc?:Y.Doc)=>{
   if(t.language==='python'||t.language==='javascript'){
    setOutput(`${msg}\n\nFalling back to in-browser execution — no JDoodle needed…`)
    try{
-    const res=t.language==='python'?await runWasmPython(code,stdin):await runWasmJs(code,stdin)
+    const res=t.language==='python'?await runWasmPython(code,stdin,(a:boolean)=>setInteractive(a),(c:string)=>setOutput(o=>o+c)):await runWasmJs(code,stdin)
     if(res.status==='Success'){sendRoom('execution:result',{...res,note:'in-browser'});showResult(res);addActivity('Code executed (in-browser)');setCanDownload(true)}
     else{showResult(res);setOutput(`In-browser run failed\n\n${res.stderr}\n\n${t.language==='python'?'':res.stdout}`)}
    }catch(wasm:any){setOutput(`${msg}\n\nIn-browser fallback unavailable: ${String(wasm?.message||wasm)||'unknown error'}`)}
@@ -519,7 +613,7 @@ const remoteStates=(awareness:any,doc?:Y.Doc)=>{
    ? <><Editor key={`${room}-${tabs[active].path}-${tabs[active].language}`} height="100%" theme={theme==='light'?'light':'vs-dark'} language={tabs[active].language} defaultValue={currentCode()} onChange={updateCode} onMount={(editor,monaco)=>{editorRef.current=editor;monacoRef.current=monaco;editor.onDidScrollChange(()=>paintPresence());editor.onDidChangeModelContent(()=>paintPresence());editor.onDidChangeCursorSelection(()=>paintPresence());editor.onDidLayoutChange(()=>paintPresence());setTimeout(syncBinding,0)}} options={{fontSize:15,minimap:{enabled:false},readOnly:role==='viewer'||role==='guest',padding:{top:26},automaticLayout:true}}/>
     <div className="rcursors">{rcursors.map(c=><div key={c.cid} className={'rcursor'+(c.typing?' typing':'')+(c.below?' below':'')} style={{left:c.left,top:c.top,height:c.height}}><i className="rcaret" style={{background:c.color}}/>{c.typing&&<b className="rname" style={{background:c.color}}>{c.name}</b>}</div>)}</div>{othersTyping().length>0&&<div className="live-typing"><span style={{borderColor:'#4a4c5e',background:'#1b1c25'}}><span className="avatars">{othersTyping().map(t=><i key={t.id} style={{background:colorOf(t.id)}} title={t.name}>{t.name[0]}</i>)}</span><span className="live-text">{typingNames(othersTyping())}<em className="live-file">{typingIn(othersTyping())}</em><span className="blink">…</span></span></span></div>}</>
    : <div className="editor-placeholder"><span>◫</span><p>Open a file from the workspace tree to start editing together.</p></div>}</div>
- <div className="bottom"><nav>{['Output','Errors','Input','AI Debugger','Chat','Activity'].map(x=><button className={panel===x?'active':''} onClick={()=>setPanel(x)} key={x}>{x}{x==='Chat'&&<span className="count">{chat.length}</span>}</button>)}</nav><div className="panel">{panel==='Output'&&<><div className="output-toolbar">{canDownload&&tabs[active]&&<button className="download" onClick={downloadFile}>⇩ Download {tabs[active].name}</button>}</div><pre>{output}</pre></>}{panel==='Input'&&<div className="stdinblock"><p className="hint">This text is sent to the program as keyboard input when you click Run — one value per line.</p><textarea className="stdin" value={stdin} onChange={e=>setStdin(e.target.value)} placeholder={'Enter each program input on its own line, e.g.:\n5\n10\n'}/></div>}{panel==='AI Debugger'&&(ai?<div className="thinking">✦ AI is analyzing the shared code…</div>:aiError?<div><p className="warning">{aiError}</p><p className="empty" style={{marginTop:12}}>Run the code first, then click ✦ AI Fix again.</p></div>:fix?<div className="fix"><strong>✦ AI Fix Suggested</strong><p><b>Root cause:</b> {fixData?.root_cause||'Review required.'}</p>{fixData?.explanation&&<p><b>Explanation:</b> {fixData.explanation}</p>}<p><b>Changes:</b> {(fixData?.changes||[]).join(', ')||'—'}</p><button onClick={applyFix}>Apply Fix</button><button className="ghost" onClick={()=>{setFix(false);setFixData(null)}}>Reject</button></div>:<div className="empty">No issue selected. Run your code or ask AI to review it.</div>)}{panel==='Chat'&&<><div className="messages">{chat.map((c,i)=>{const sys=c.who==='CodeFix AI';const col=sys?'#9c83ff':(c.id?(users.find(u=>u.id===c.id)?.color||colorFor(c.id)):'#7c5cff');return <p key={i} className={sys?'msg sys':''}><span className="msg-who" style={{color:col,background:col+'22',borderColor:col+'66'}} title={c.who}>{sys?'✦':(c.who||'?')[0].toUpperCase()}</span><span className="msg-text"><b style={{color:col}}>{c.who}</b> {c.text}</span></p>})}</div>{typing.length>0&&<div className="typing-line"><span style={{color:typing.some(t=>t.id===meId)?colorOf(meId):colorOf(othersTyping()[0]?.id)}}><b>{typingNames(typing)}</b><em className="live-file">{typingIn(typing)}</em><span className="blink">…</span></span></div>}<form onSubmit={e=>{e.preventDefault();const txt=message.trim();if(txt){sendRoom('chat:message',{id:meId,who:name,text:txt});setChat(c=>[...c,{id:meId,who:name,text:txt}]);setMessage('')}}}><input value={message} onChange={e=>setMessage(e.target.value)} placeholder="Type a message…"/><button>↑</button></form></>}{panel==='Activity'&&<div className="activity"><p className="hint">Type in any file — changes auto-save to the project workspace (to disk).</p>{activity.map((a,i)=><p key={i}>{a}</p>)}</div>}{panel==='Errors'&&<div className="empty">{errors||'No compiler errors.'}</div>}</div></div></section></main>
+ <div className="bottom"><nav>{['Output','Errors','Input','AI Debugger','Chat','Activity'].map(x=><button className={panel===x?'active':''} onClick={()=>setPanel(x)} key={x}>{x}{x==='Chat'&&<span className="count">{chat.length}</span>}</button>)}</nav><div className="panel">{panel==='Output'&&<><div className="output-toolbar">{canDownload&&tabs[active]&&<button className="download" onClick={downloadFile}>⇩ Download {tabs[active].name}</button>}</div><pre>{output}</pre></>}{panel==='Input'&&<div className="stdinblock">{interactive?interactiveEnv?<p className="hint">⌨ The program is waiting for input — type one line and click Send (you can keep feeding it, in real time).</p>:<p className="hint">Waiting for the in-browser interpreter…</p>:<p className="hint">This text is sent to the program as keyboard input when you click Run — one value per line.</p>}<textarea className="stdin" value={stdin} onChange={e=>setStdin(e.target.value)} placeholder={'Enter each program input on its own line, e.g.:\n5\n10\n'}/>{interactive&&<div><button onClick={()=>{const send=interactiveEnv?.sendLine;if(!send)return;const lines=stdin.split('\n');const idx=lines.findIndex(l=>l.trim()!=='');if(idx<0)return;const line=lines[idx];send(line);lines.splice(idx,1);setStdin(lines.join('\n'))}}>Send ⏎</button></div>}</div>}{panel==='AI Debugger'&&(ai?<div className="thinking">✦ AI is analyzing the shared code…</div>:aiError?<div><p className="warning">{aiError}</p><p className="empty" style={{marginTop:12}}>Run the code first, then click ✦ AI Fix again.</p></div>:fix?<div className="fix"><strong>✦ AI Fix Suggested</strong><p><b>Root cause:</b> {fixData?.root_cause||'Review required.'}</p>{fixData?.explanation&&<p><b>Explanation:</b> {fixData.explanation}</p>}<p><b>Changes:</b> {(fixData?.changes||[]).join(', ')||'—'}</p><button onClick={applyFix}>Apply Fix</button><button className="ghost" onClick={()=>{setFix(false);setFixData(null)}}>Reject</button></div>:<div className="empty">No issue selected. Run your code or ask AI to review it.</div>)}{panel==='Chat'&&<><div className="messages">{chat.map((c,i)=>{const sys=c.who==='CodeFix AI';const col=sys?'#9c83ff':(c.id?(users.find(u=>u.id===c.id)?.color||colorFor(c.id)):'#7c5cff');return <p key={i} className={sys?'msg sys':''}><span className="msg-who" style={{color:col,background:col+'22',borderColor:col+'66'}} title={c.who}>{sys?'✦':(c.who||'?')[0].toUpperCase()}</span><span className="msg-text"><b style={{color:col}}>{c.who}</b> {c.text}</span></p>})}</div>{typing.length>0&&<div className="typing-line"><span style={{color:typing.some(t=>t.id===meId)?colorOf(meId):colorOf(othersTyping()[0]?.id)}}><b>{typingNames(typing)}</b><em className="live-file">{typingIn(typing)}</em><span className="blink">…</span></span></div>}<form onSubmit={e=>{e.preventDefault();const txt=message.trim();if(txt){sendRoom('chat:message',{id:meId,who:name,text:txt});setChat(c=>[...c,{id:meId,who:name,text:txt}]);setMessage('')}}}><input value={message} onChange={e=>setMessage(e.target.value)} placeholder="Type a message…"/><button>↑</button></form></>}{panel==='Activity'&&<div className="activity"><p className="hint">Type in any file — changes auto-save to the project workspace (to disk).</p>{activity.map((a,i)=><p key={i}>{a}</p>)}</div>}{panel==='Errors'&&<div className="empty">{errors||'No compiler errors.'}</div>}</div></div></section></main>
  {fsError&&<div className="toast warn" onClick={()=>setFsError('')}>⚠ {fsError}</div>}
  {created&&<div className="toast">✓ Workspace {room} created — files auto-save to the project</div>}
  {pending.length>0&&<div className="request"><div><span>JOIN REQUEST</span><h3>{pending[0].name} wants to join</h3><p>{pending[0].device} · requests editor access</p><button onClick={()=>accept(pending[0])}>Accept</button><button className="ghost" onClick={()=>rejectJoin(pending[0])}>Reject</button></div></div>}

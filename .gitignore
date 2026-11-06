@@ -6,4 +6,4 @@ __pycache__/
 .env
 .env.example
 dist/
-build/
+build/frontend/public/pyodide/
