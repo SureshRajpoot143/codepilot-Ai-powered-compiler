@@ -1,0 +1,36 @@
+{
+  "project_id": "CFX-XHHV8F",
+  "name": "Host's workspace",
+  "owner_id": "CFX-QA1",
+  "created_at": 1793946932.30224,
+  "updated_at": 1793946932.345013,
+  "language": "python",
+  "members": {
+    "CFX-QA1": {
+      "id": "CFX-QA1",
+      "name": "Host",
+      "device": "This device",
+      "role": "host"
+    }
+  },
+  "filesystem": [
+    {
+      "id": "12edfde8558b",
+      "parent_id": "",
+      "name": "main.py",
+      "path": "main.py",
+      "is_directory": false,
+      "language": "python",
+      "created_at": 1793946932.307334
+    },
+    {
+      "id": "23b60bc21538",
+      "parent_id": "",
+      "name": "README.md",
+      "path": "README.md",
+      "is_directory": false,
+      "language": "markdown",
+      "created_at": 1793946932.319304
+    }
+  ]
+}
