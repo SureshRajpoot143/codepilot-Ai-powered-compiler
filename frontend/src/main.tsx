@@ -51,9 +51,11 @@ async function api(path:string,opts:RequestInit={}){
  const raw=await res.text();let data:any={};try{data=raw?JSON.parse(raw):{}}catch{}
  if(!res.ok)throw new Error(data.detail||`Request failed (${res.status})`);return data
 }
-function App(){
- const [room,setRoom]=useState(linkedRoom||''),[created,setCreated]=useState(false)
- const [route,setRoute]=useState<'landing'|'guest'>(linkedRoom?'guest':'landing'),[joinCode,setJoinCode]=useState('')
+ function App(){
+  // Remember the last joined room + your role so a page refresh restores the session.
+  const savedRoom=(()=>{try{return JSON.parse(sessionStorage.getItem('cfx_session')||'null')}catch{return null}})()
+  const [room,setRoom]=useState(linkedRoom||savedRoom?.room||''),[created,setCreated]=useState(false)
+  const [route,setRoute]=useState<'landing'|'guest'>((linkedRoom||savedRoom?.room)?'guest':'landing'),[joinCode,setJoinCode]=useState('')
  const [name,setName]=useState('You'),[role,setRole]=useState<Role>('guest'),[joined,setJoined]=useState(false)
  const [theme,setTheme]=useState<'light'|'dark'>(savedTheme)
  useEffect(()=>{document.documentElement.dataset.theme=theme;localStorage.setItem('cfx_theme',theme)},[theme])
@@ -339,15 +341,19 @@ const remoteStates=(awareness:any,doc?:Y.Doc)=>{
   openDocsRef.current.forEach(e=>{e.provider.destroy();e.doc.destroy()});openDocsRef.current.clear()
   if(bindRef.current){bindRef.current.binding.destroy();bindRef.current=null}
   setTabs([]);setActive(0);setNodes([]);setPresence([]);setExpanded(new Set());setEntry('');setTreeReady(false)
-  history.pushState({},'',`/room/${r.id}`);setRoom(r.id);setCreated(true);setJoined(true);setRole(nextRole);setSessionLanguage(r.language||'python')
+  history.pushState({},'',`/room/${r.id}`);setRoom(r.id);setCreated(true);setJoined(true);setRole(nextRole);setSessionLanguage(r.language||'python');sessionStorage.setItem('cfx_session',JSON.stringify({room:r.id,id:meId}))
   setUsers([{id:meId,name:self?.name||name.trim()||'You',device:myDevice,role:nextRole,color:colors[0]}])}
  const joinByCode=()=>{const code=(joinCode||'').trim().toUpperCase();if(!code)return;setRoute('guest');setRoom(code);setCreated(false);history.pushState({},'',`/room/${code}`)}
- const resetToLanding=()=>{setJoined(false);setRole('guest');setUsers([]);setPending([]);setLangPending([]);setRoom('');setRoute('landing');setGuestStep('form');setGuestMsg('');setCreateError('');setCreated(false);setChat([]);setTyping([]);setFix(false);setFixData(null);setActivity(['Left the room']);history.pushState({},'', '/')}
+   const resetToLanding=()=>{sessionStorage.removeItem('cfx_session');setJoined(false);setRole('guest');setUsers([]);setPending([]);setLangPending([]);setRoom('');setRoute('landing');setGuestStep('form');setGuestMsg('');setCreateError('');setCreated(false);setChat([]);setTyping([]);setFix(false);setFixData(null);setActivity(['Left the room']);history.pushState({},'', '/')}
  const leave=async()=>{if(!room)return;if(role==='host'){try{await api(`/rooms/${room}?host_id=${meId}`,{method:'DELETE'})}catch{}}resetToLanding()}
  const kick=async(m:User)=>{if(role!=='host'||m.id===meId)return;try{await api(`/rooms/${room}/members/${m.id}?host_id=${meId}`,{method:'DELETE'})}catch{}}
-  const requestJoin=async()=>{if(!name.trim()||!room)return;setGuestMsg('');try{await api(`/rooms/${room}/join`,{method:'POST',body:JSON.stringify({id:meId,name:name.trim(),device:myDevice})});setGuestStep('waiting')}catch(error){setGuestMsg(error instanceof Error?error.message:String(error))}}
+const requestJoin=async()=>{if(!name.trim()||!room)return;setGuestMsg('');try{
+    const res=await api(`/rooms/${room}/join`,{method:'POST',body:JSON.stringify({id:meId,name:name.trim(),device:myDevice})})
+    if(res.status==='accepted'){setRole((res.role||'editor') as Role);setJoined(true);setGuestStep('form');sessionStorage.setItem('cfx_session',JSON.stringify({room,id:meId}));if(room!==linkedRoom)history.pushState({},'',`/room/${room}`);addActivity('Rejoined room')}
+    else{setGuestStep('waiting');sessionStorage.setItem('cfx_session',JSON.stringify({room,id:meId}))}
+   }catch(error){setGuestMsg(error instanceof Error?error.message:String(error))}}
   useEffect(()=>{
-    if(linkedRoom && route==='guest' && !joined && guestStep==='form' && room===linkedRoom){
+    if(room && route==='guest' && !joined && guestStep==='form' && (room===linkedRoom||savedRoom?.room===room)){
       const t=setTimeout(()=>{requestJoin()},200)
       return ()=>clearTimeout(t)
     }
