@@ -17,8 +17,8 @@ services:
         value: codefix_ai
       - key: JWT_SECRET
         generateValue: true
+      # e.g. https://codefix-ai.vercel.app (the Vercel origin; required for CORS)
       - key: FRONTEND_URL
-        sync: false # e.g. https://codefix-ai-frontend.onrender.com
       - key: JDOODLE_CLIENT_ID
         sync: false
       - key: JDOODLE_CLIENT_SECRET
@@ -55,8 +55,12 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "20"
-      - key: VITE_COLLAB_URL
-        sync: false # e.g. wss://codefix-ai-collab.onrender.com
+      # Set these at Vercel build time (Project Settings -> Environment Variables):
+      #   VITE_BACKEND_URL  = the codefix-ai-backend service URL (e.g. https://codefix-ai-backend.onrender.com)
+      #   VITE_COLLAB_URL   = the codefix-ai-collab service URL as wss:// (e.g. wss://codefix-ai-collab.onrender.com)
+      # and set FRONTEND_URL on the backend Верcel origin (e.g. https://codefix-ai.vercel.app)
+      - key: VITE_BACKEND_URL
+        sync: false
     routes:
       - type: rewrite
         source: /*

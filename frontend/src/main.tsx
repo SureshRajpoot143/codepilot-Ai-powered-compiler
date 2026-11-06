@@ -18,8 +18,12 @@ const initial=`# Welcome to CodeFix AI\n# Invite teammates and edit together in 
 const extensions:Record<string,string>={python:'py',javascript:'js',cpp:'cpp',c:'c',java:'java',markdown:'md',typescript:'ts',json:'json',text:'txt'}
 const extToLang:Record<string,string>={py:'python',js:'javascript',jsx:'javascript',ts:'typescript',tsx:'typescript',c:'c',h:'c',cpp:'cpp',java:'java',md:'markdown',txt:'text',json:'json',css:'css',html:'html'}
 const iconOf:Record<string,string>={folder:'▸',folderOpen:'▾',python:'ᵖ',javascript:'ᴊ',typescript:'ᵗ',c:'ᶜ',cpp:'⁺⁺',java:'ᵍ',markdown:'ᵐ',json:'{}',text:'◫'}
-const linkedRoom=location.pathname.match(/^\/room\/([^/]+)\/?$/)?.[1]
-const collabUrl=import.meta.env.VITE_COLLAB_URL || `${location.protocol==='https:'?'wss':'ws'}://${location.hostname}:1234`
+ const linkedRoom=location.pathname.match(/^\/room\/([^/]+)\/?$/)?.[1]
+ // Empty on localhost (Vite proxy handles /api and /ws); set to the deployed
+ // backend origin (e.g. https://codefix-ai-backend.onrender.com) in production.
+ const apiBase=import.meta.env.VITE_BACKEND_URL||''
+ const apiWsBase=apiBase?apiBase.replace(/^http/,'ws'):`${location.protocol==='https:'?'wss':'ws'}://${location.host}`
+ const collabUrl=import.meta.env.VITE_COLLAB_URL || `${location.protocol==='https:'?'wss':'ws'}://${location.hostname}:1234`
 const wsProto=location.protocol==='https:'?'wss':'ws'
 const meId=(()=>{let id=localStorage.getItem('cfx_me')||'';if(!id){id='U-'+Math.random().toString(36).slice(2,10).toUpperCase();localStorage.setItem('cfx_me',id)};return id})()
 const savedTheme=(localStorage.getItem('cfx_theme')==='light'?'light':'dark') as 'light'|'dark'
@@ -43,7 +47,7 @@ const b64u=(s:string)=>btoa(unescape(encodeURIComponent(s))).replace(/\+/g,'-').
 const fileDocName=(r:string,p:string)=>`${r}:${b64u(p)}`
 const treeDocName=(r:string)=>`${r}:tree`
 async function api(path:string,opts:RequestInit={}){
- const res=await fetch(`/api${path}`,{headers:{'Content-Type':'application/json'},...opts})
+  const res=await fetch(`${apiBase}/api${path}`,{headers:{'Content-Type':'application/json'},...opts})
  const raw=await res.text();let data:any={};try{data=raw?JSON.parse(raw):{}}catch{}
  if(!res.ok)throw new Error(data.detail||`Request failed (${res.status})`);return data
 }
@@ -107,9 +111,9 @@ const notifyTyping=()=>{
  const showResult=(r:any)=>{setCanDownload(r?.status==='Success');if(r?.stderr){setCompilerMarkers(r.stderr);setErrors(r.stderr)};const tip=/input|EOF/i.test(r?.stderr||'')?'\n\nTip: type the program inputs in the Input box (one per line) and click Run again.':'';setOutput(`Status: ${r?.status||'—'}\n\n${r?.stdout||''}${r?.stderr?`\nErrors:\n${r.stderr}`:''}\nTime: ${r?.time||'—'} sec  •  Memory: ${r?.memory||'—'}${tip}`)}
  const activePath=()=>tabsRef.current[activeRef.current]?.path||''
 const tabsOn=(path:string)=>presence.filter(p=>p.activeFile===path)
-useEffect(()=>{if(location.hostname!=='localhost'&&location.hostname!=='127.0.0.1')return;fetch('/api/network').then(r=>r.json()).then((d:any)=>{if(d?.ip&&d.ip!=='0.0.0.0')setShareHost(`${d.ip}:5173`)}).catch(()=>{})},[])
+useEffect(()=>{if(location.hostname!=='localhost'&&location.hostname!=='127.0.0.1')return;fetch(`${apiBase}/api/network`).then(r=>r.json()).then((d:any)=>{if(d?.ip&&d.ip!=='0.0.0.0')setShareHost(`${d.ip}:5173`)}).catch(()=>{})},[])
  useEffect(()=>{const connected=Boolean(room)&&(joined||guestStep==='waiting');if(!connected)return
-  const ws=new WebSocket(`${wsProto}://${location.host}/ws/rooms/${room}/${meId}`);wsRef.current=ws
+   const ws=new WebSocket(`${apiWsBase}/ws/rooms/${room}/${meId}`);wsRef.current=ws
   ws.onmessage=(e)=>{const msg=JSON.parse(e.data)
    switch(msg.event){
     case 'room:join_request':if(role==='host')setPending(p=>p.some(x=>x.id===msg.data.id)?p:[...p,msg.data]);break
