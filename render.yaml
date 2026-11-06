@@ -19,6 +19,7 @@ services:
         generateValue: true
       # e.g. https://codefix-ai.vercel.app (the Vercel origin; required for CORS)
       - key: FRONTEND_URL
+        sync: false
       - key: JDOODLE_CLIENT_ID
         sync: false
       - key: JDOODLE_CLIENT_SECRET
