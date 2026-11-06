@@ -1,0 +1,36 @@
+{
+  "project_id": "CFX-O2U9FX",
+  "name": "Suresh Rajpoot's room",
+  "owner_id": "U-G103GFSJ",
+  "created_at": 1793603919.063401,
+  "updated_at": 1793604029.901691,
+  "language": "python",
+  "members": {
+    "U-G103GFSJ": {
+      "id": "U-G103GFSJ",
+      "name": "Ajay",
+      "device": "This device",
+      "role": "host"
+    }
+  },
+  "filesystem": [
+    {
+      "id": "62ba4b28ffbe",
+      "parent_id": "",
+      "name": "main.py",
+      "path": "main.py",
+      "is_directory": false,
+      "language": "python",
+      "created_at": 1793603919.066682
+    },
+    {
+      "id": "befae2086155",
+      "parent_id": "",
+      "name": "README.md",
+      "path": "README.md",
+      "is_directory": false,
+      "language": "markdown",
+      "created_at": 1793603919.088112
+    }
+  ]
+}

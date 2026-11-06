@@ -1,0 +1,36 @@
+{
+  "project_id": "CFX-BXG177",
+  "name": "Ajay's room",
+  "owner_id": "U-G103GFSJ",
+  "created_at": 1793603980.471025,
+  "updated_at": 1793603983.104498,
+  "language": "python",
+  "members": {
+    "U-G103GFSJ": {
+      "id": "U-G103GFSJ",
+      "name": "Ajay",
+      "device": "This device",
+      "role": "host"
+    }
+  },
+  "filesystem": [
+    {
+      "id": "3a8d0079f912",
+      "parent_id": "",
+      "name": "main.py",
+      "path": "main.py",
+      "is_directory": false,
+      "language": "python",
+      "created_at": 1793603980.4746392
+    },
+    {
+      "id": "bef1e285d326",
+      "parent_id": "",
+      "name": "README.md",
+      "path": "README.md",
+      "is_directory": false,
+      "language": "markdown",
+      "created_at": 1793603980.4856489
+    }
+  ]
+}

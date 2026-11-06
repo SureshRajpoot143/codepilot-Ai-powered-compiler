@@ -1,0 +1,36 @@
+{
+  "project_id": "CFX-RAKVHV",
+  "name": "Suresh Rajpoot's room",
+  "owner_id": "U-G103GFSJ",
+  "created_at": 1793603900.872222,
+  "updated_at": 1793603919.102946,
+  "language": "python",
+  "members": {
+    "U-G103GFSJ": {
+      "id": "U-G103GFSJ",
+      "name": "Suresh Rajpoot",
+      "device": "This device",
+      "role": "host"
+    }
+  },
+  "filesystem": [
+    {
+      "id": "118655679cde",
+      "parent_id": "",
+      "name": "main.py",
+      "path": "main.py",
+      "is_directory": false,
+      "language": "python",
+      "created_at": 1793603900.8772109
+    },
+    {
+      "id": "940c97e808dd",
+      "parent_id": "",
+      "name": "README.md",
+      "path": "README.md",
+      "is_directory": false,
+      "language": "markdown",
+      "created_at": 1793603900.88598
+    }
+  ]
+}
