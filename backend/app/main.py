@@ -1,6 +1,6 @@
 """CodeFix AI application API. Room permissions remain server authoritative."""
 from __future__ import annotations
-import asyncio, os, random, socket, string, time, json, shutil, subprocess, tempfile
+import asyncio, os, random, re, socket, string, time, json, shutil, subprocess, tempfile
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Literal
@@ -403,7 +403,7 @@ async def execute(rid: str, actor_id: str, body: Execute):
     r=get_room(rid); member=r.members.get(actor_id)
     if not member or member.role=="viewer": raise HTTPException(403,"Run permission denied")
     await broadcast(rid,"execution:start",{"user":member.name})
-    result = await run_with_jdoodle(body)
+    result = await run_code(body)
     await broadcast(rid,"execution:result",result); return result
 
 async def run_with_jdoodle(body: Execute) -> dict[str, Any]:
@@ -462,10 +462,96 @@ async def run_with_jdoodle(body: Execute) -> dict[str, Any]:
         "time": data.get("cpuTime"),
         "memory": data.get("memory"),
     }
+def run_code_locally(code: str, language: str, stdin: str) -> dict[str, Any]:
+    """Compile/run a single editor snapshot on the backend machine.
+
+    Used automatically when JDoodle is not configured or cannot be reached so
+    the user still gets real compiler output instead of "execution unavailable".
+    """
+    started = time.time()
+    tmpdir = tempfile.mkdtemp(prefix="cfx-exec-")
+    names = {"python": "main.py", "javascript": "main.js", "c": "main.c", "cpp": "main.cpp", "java": "Main.java"}
+    filename = names.get(language)
+    if not filename:
+        raise HTTPException(400, f"Unsupported language: {language}")
+    entry = Path(tmpdir) / filename
+    if language == "java":
+        public_class = re.search(r"public\s+(?:final\s+)?class\s+(\w+)", code)
+        if public_class:
+            filename = public_class.group(1) + ".java"
+            entry = Path(tmpdir) / filename
+    entry.write_text(code, encoding="utf-8")
+    try:
+        try:
+            if language == "python":
+                engine = _find("python3", "python")
+                if not engine:
+                    raise HTTPException(503, "python3 is not installed on the backend machine")
+                result = subprocess.run([engine, str(entry)], cwd=tmpdir, input=stdin, capture_output=True, text=True, timeout=20)
+            elif language == "javascript":
+                engine = _find("node")
+                if not engine:
+                    raise HTTPException(503, "node is not installed on the backend machine")
+                result = subprocess.run([engine, str(entry)], cwd=tmpdir, input=stdin, capture_output=True, text=True, timeout=20)
+            elif language == "c":
+                engine = _find("cc", "clang", "gcc")
+                if not engine:
+                    raise HTTPException(503, "A C compiler (cc/clang/gcc) is not installed on the backend machine")
+                exe = str(Path(tmpdir) / "a.out")
+                built = subprocess.run([engine, str(entry), "-o", exe], capture_output=True, text=True, timeout=30)
+                if built.returncode != 0:
+                    return {"status": "Compilation Error", "stdout": "", "stderr": built.stderr or built.stdout, "time": round(time.time() - started, 2), "memory": "local"}
+                result = subprocess.run([exe], cwd=tmpdir, input=stdin, capture_output=True, text=True, timeout=20)
+            elif language == "cpp":
+                engine = _find("c++", "clang++", "g++")
+                if not engine:
+                    raise HTTPException(503, "A C++ compiler (c++/clang++/g++) is not installed on the backend machine")
+                exe = str(Path(tmpdir) / "a.out")
+                built = subprocess.run([engine, str(entry), "-o", exe], capture_output=True, text=True, timeout=30)
+                if built.returncode != 0:
+                    return {"status": "Compilation Error", "stdout": "", "stderr": built.stderr or built.stdout, "time": round(time.time() - started, 2), "memory": "local"}
+                result = subprocess.run([exe], cwd=tmpdir, input=stdin, capture_output=True, text=True, timeout=20)
+            else:
+                javac = _find("javac")
+                if not javac:
+                    raise HTTPException(503, "javac is not installed on the backend machine")
+                built = subprocess.run([javac, "-d", tmpdir, str(entry)], capture_output=True, text=True, timeout=30)
+                if built.returncode != 0:
+                    return {"status": "Compilation Error", "stdout": "", "stderr": built.stderr or built.stdout, "time": round(time.time() - started, 2), "memory": "local"}
+                java = _find("java")
+                if not java:
+                    raise HTTPException(503, "java is not installed on the backend machine")
+                result = subprocess.run([java, "-cp", tmpdir, Path(filename).stem], cwd=tmpdir, input=stdin, capture_output=True, text=True, timeout=20)
+        except subprocess.TimeoutExpired:
+            return {"status": "Timeout", "stdout": "", "stderr": "Execution timed out after 20 seconds", "time": "20", "memory": "local"}
+        return {
+            "status": "Success" if result.returncode == 0 else "Failed",
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "time": round(time.time() - started, 2),
+            "memory": "local",
+        }
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+async def run_code(body: Execute) -> dict[str, Any]:
+    """Run through JDoodle; auto-compile locally when the keys are unavailable."""
+    try:
+        return await run_with_jdoodle(body)
+    except HTTPException as jdoodle_error:
+        try:
+            result = await asyncio.to_thread(run_code_locally, body.code, body.language, body.stdin)
+        except HTTPException:
+            raise jdoodle_error
+        except Exception:
+            raise jdoodle_error
+        result["note"] = "local"
+        return result
+
 @app.post("/api/execute")
 async def execute_current(body: Execute):
-    """Run the exact editor snapshot through JDoodle; never fabricate output."""
-    return await run_with_jdoodle(body)
+    """Run the exact editor snapshot, falling back to local compile when needed."""
+    return await run_code(body)
 
 ENTRY_PREFERENCES = ["main.py", "main.js", "index.js", "app.js", "Main.java", "main.c", "main.cpp", "main.cc", "main.cxx"]
 

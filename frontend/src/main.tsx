@@ -143,8 +143,17 @@ self.onmessage=async e=>{const d=e.data||{}
  if(d.type==='init'){SAB=d.sab;ctl=new Int32Array(SAB,0,4);data=new Uint8Array(SAB,32)}
  else if(d.type==='run'){
   try{
-   importScripts(d.pyUrl)
-   pyr=await loadPyodide({indexURL:d.pyIdx})
+   // Load the Emscripten module explicitly so Pyodide does not have to
+   // resolve its asm.js dependency from the blob worker URL.
+   let indexURL=d.pyIdx
+   try{importScripts(d.pyAsmUrl,d.pyUrl)}
+   catch{
+    // A deployment may serve worker scripts with headers that reject nested
+    // same-origin imports; the official CDN provides the same version with CORS.
+    indexURL=d.fallbackIdx
+    importScripts(d.fallbackAsmUrl,d.fallbackUrl)
+   }
+   pyr=await loadPyodide({indexURL})
    pyr.setStdout({batched:s=>postMessage({chunk:String(s)+'\\n'})})
    pyr.setStderr({batched:s=>{const l=String(s);if(l.trim())postMessage({errchunk:l})}})
    const blockingLine=()=>{
@@ -187,7 +196,8 @@ self.onmessage=async e=>{const d=e.data||{}
   w.onerror=(e:any)=>finish({status:'Failed',stdout:out.join(''),stderr:e.message||'Worker error',time:'—',memory:'—'})
   w.postMessage({type:'init',sab})
   const origin=location.origin
-  w.postMessage({type:'run',code,pyUrl:`${origin}/pyodide/pyodide.js`,pyIdx:`${origin}/pyodide/`})
+  const pyodideCdn='https://cdn.jsdelivr.net/pyodide/v0.26.2/full/'
+  w.postMessage({type:'run',code,pyUrl:`${origin}/pyodide/pyodide.js`,pyAsmUrl:`${origin}/pyodide/pyodide.asm.js`,pyIdx:`${origin}/pyodide/`,fallbackUrl:`${pyodideCdn}pyodide.js`,fallbackAsmUrl:`${pyodideCdn}pyodide.asm.js`,fallbackIdx:pyodideCdn})
  })
 }
 const runWasmJs=(code:string,stdin:string):Promise<ExecResult>=>{
@@ -272,7 +282,7 @@ const notifyTyping=()=>{
  const addActivity=(text:string)=>setActivity(a=>[`${new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})} — ${text}`,...a].slice(0,30))
  const sendRoom=(event:string,data:any)=>{if(wsRef.current?.readyState===WebSocket.OPEN)wsRef.current.send(JSON.stringify({event,data}))}
  const upsertUser=(m:Member)=>{setUsers(us=>{const i=us.findIndex(x=>x.id===m.id);if(i>=0){const next=[...us];next[i]={...next[i],name:m.name,device:m.device,role:m.role};return next}const color=colors[(us.length-1)%colors.length];return [...us,{id:m.id,name:m.name,device:m.device,role:m.role,color}]})}
- const showResult=(r:any)=>{setCanDownload(r?.status==='Success');if(r?.stderr){setCompilerMarkers(r.stderr);setErrors(r.stderr)};const tip=/input|EOF/i.test(r?.stderr||'')?'\n\nTip: type the program inputs in the Input box (one per line) and click Run again.':'';setOutput(`Status: ${r?.status||'—'}\n\n${r?.stdout||''}${r?.stderr?`\nErrors:\n${r.stderr}`:''}\nTime: ${r?.time||'—'} sec  •  Memory: ${r?.memory||'—'}${tip}`)}
+ const showResult=(r:any)=>{setCanDownload(r?.status==='Success');if(r?.stderr){setCompilerMarkers(r.stderr);setErrors(r.stderr)};const tip=/input|EOF/i.test(r?.stderr||'')?'\n\nTip: type the program inputs in the Input box (one per line) and click Run again.':'';setOutput(`Status: ${r?.status||'—'}\n\n${r?.stdout||''}${r?.stderr?`\nErrors:\n${r.stderr}`:''}\nTime: ${r?.time||'—'} sec  •  Memory: ${r?.memory||'—'}${r?.note==='local'?'  •  Local fallback (JDoodle unavailable)':''}${tip}`)}
  const activePath=()=>tabsRef.current[activeRef.current]?.path||''
 const tabsOn=(path:string)=>presence.filter(p=>p.activeFile===path)
 useEffect(()=>{if(location.hostname!=='localhost'&&location.hostname!=='127.0.0.1')return;fetch(`${apiBase}/api/network`).then(r=>r.json()).then((d:any)=>{if(d?.ip&&d.ip!=='0.0.0.0')setShareHost(`${d.ip}:5173`)}).catch(()=>{})},[])
@@ -540,7 +550,7 @@ const remoteStates=(awareness:any,doc?:Y.Doc)=>{
     if(res.status==='Success'){sendRoom('execution:result',{...res,note:'in-browser'});showResult(res);addActivity('Code executed (in-browser)');setCanDownload(true)}
     else{showResult(res);setOutput(`In-browser run failed\n\n${res.stderr}\n\n${t.language==='python'?'':res.stdout}`)}
    }catch(wasm:any){setOutput(`${msg}\n\nIn-browser fallback unavailable: ${String(wasm?.message||wasm)||'unknown error'}`)}
-  }else setOutput(`Execution unavailable\n\n${msg}\n\nStart FastAPI and configure JDOODLE_CLIENT_ID and JDOODLE_CLIENT_SECRET for real compiler output.`)
+  }else setOutput(`Execution unavailable\n\n${msg}\n\nJDoodle is not configured and the backend machine has no local runtime for ${t.language} (install python3, node, cc/c++ or javac, or set JDOODLE_CLIENT_ID and JDOODLE_CLIENT_SECRET).`)
  }finally{setRunning(false)}}
   const runProject=async()=>{if(!entry)return;setRunning(true);setCanDownload(false);setOutput(`${name} is running project entry ${entry}…`);setPanel('Output');try{const result=await api(`/rooms/${room}/execute-project?actor_id=${meId}`,{method:'POST',body:JSON.stringify({entry,stdin})});showResult(result);addActivity(`Ran project: ${result.entry||entry}`)}catch(error){setOutput(`Project run unavailable\n\n${error instanceof Error?error.message:'Could not start the run.'}\n\nThe whole project runs on the backend machine (like VS Code) — needs the runtime installed there.`)}finally{setRunning(false)}}
   const importFiles=async(items:{path:string;content:string}[])=>{if(!items.length)return;setImporting(true);setImportMsg('');try{const r=await api(`/workspace/${room}/import/json?actor_id=${meId}`,{method:'POST',body:JSON.stringify({files:items})});await resyncTree();setImportMsg('✓ Imported '+r.added+' files'+(r.skipped&&r.skipped.length?' ('+r.skipped.length+' skipped)':''));addActivity('Imported project — '+r.added+' files')}catch(error){setImportMsg('⚠ '+String(error instanceof Error?error.message:error))}finally{setImporting(false)}}
