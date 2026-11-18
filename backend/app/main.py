@@ -1194,9 +1194,10 @@ async def _make_exercise(body: AiTestRequest, feedback: str = "") -> tuple[dict[
         "blanks": [str(b)[:300] for b in data.get("blanks") or []][:10],
         "hints": [str(h)[:400] for h in data.get("hints") or []][:10],
         "tests": tests[:8],
-        # No solution is ever sent: reference_code is used only for grading, and
-        # the user has to write the missing part themselves.
-        "solution_included": False,
+        # The answer travels with the exercise but the UI keeps it hidden behind
+        # a "Show answer" button, so it is never inserted or shown by default.
+        "solution_code": reference,
+        "solution_available": bool(reference),
     }, problem
 
 @app.post("/api/ai-test")

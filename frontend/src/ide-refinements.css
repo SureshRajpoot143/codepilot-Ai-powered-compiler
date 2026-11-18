@@ -35,3 +35,6 @@ html,body,#root{height:100%}body{background:#0b0d12}.app.codepilot{height:100vh;
 .practice-case code{background:#20222c;padding:1px 5px;border-radius:4px;font-family:'DM Mono',monospace;font-size:11px;white-space:pre-wrap;word-break:break-word}
 .practice-case em{color:#9294a2;font-style:normal}
 .practice-case pre.warning{white-space:pre-wrap;font-size:11px;margin:6px 0 0}
+.practice-solution{border:1px dashed #4a4066;border-radius:8px;padding:10px;background:#1a1626}
+.practice-solution>b{display:block;margin-bottom:6px}
+.practice-solution .hint{font-size:11px;color:#9294a2;margin:6px 0 0}
