@@ -1026,6 +1026,230 @@ async def ai_ask(body: AskRequest):
 async def ai_fix_current(body: AiRequest):
     """Analyze the exact editor snapshot with AI and return a fix proposal."""
     return await run_ai_fix(body)
+
+# --- AI Test: fill-in-the-blank exercises, never a finished solution ---------
+class TestCase(BaseModel):
+    name: str = Field(default="", max_length=160)
+    stdin: str = Field(default="", max_length=20_000)
+    expected_output: str = Field(default="", max_length=20_000)
+
+class AiTestRequest(BaseModel):
+    code: str = Field(default="", max_length=100_000)
+    language: str = Field(default="python", max_length=40)
+    topic: str = Field(default="", max_length=200)
+
+class CheckAnswerRequest(BaseModel):
+    code: str = Field(max_length=100_000)
+    language: str = Field(default="python", max_length=40)
+    tests: list[TestCase] = Field(default_factory=list, max_length=20)
+
+TEST_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "title": {"type": "string"},
+        "task": {"type": "string"},
+        "template_code": {"type": "string"},
+        "blanks": {"type": "array", "items": {"type": "string"}},
+        "hints": {"type": "array", "items": {"type": "string"}},
+        "reference_code": {"type": "string"},
+        "tests": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "stdin": {"type": "string"},
+                    "expected_output": {"type": "string"},
+                },
+                "required": ["name", "stdin", "expected_output"],
+            },
+        },
+    },
+    "required": ["title", "task", "template_code", "blanks", "hints", "reference_code", "tests"],
+}
+
+def _test_prompt(code: str, language: str, topic: str) -> str:
+    context = ""
+    if code.strip():
+        context = f"""
+The user is currently working on this {language} file — base the exercise on the same
+idea, but leave the important logic for the user to write:
+```{language}
+{code[:6000]}
+```
+"""
+    topic_line = f"Exercise topic: {topic.strip()}" if topic.strip() else "Exercise topic: choose something useful for the file above."
+    return f"""You are a programming tutor creating a hands-on practice exercise.
+Language: {language}
+{topic_line}
+{context}
+Build a FILL-IN-THE-BLANK exercise, not a finished program:
+- template_code must be a complete, runnable file EXCEPT for the parts the user must write.
+- Every gap must be an EMPTY placeholder that cannot work yet: leave it as
+  "raise NotImplementedError(\"TODO: implement ...\")" (Python), "throw new Error('TODO: ...')" (JS/Java),
+  or a "/* TODO: implement ... */" block with no code (C/C++).
+- The template MUST fail the tests until the user fills the gaps. Never leave working logic behind a TODO comment.
+- Do NOT put the answer anywhere in template_code: no commented-out solution, no unused helper that solves it,
+  and no leftover copy of the original working method next to the empty one.
+- Put only 1-3 small gaps, each one focused on the lesson.
+- blanks: short descriptions of what belongs in each TODO (questions, not answers).
+- hints: 1-3 nudges that explain the idea without giving the code away.
+- reference_code: the COMPLETE working solution with every TODO filled in. It stays private on the
+  server — it is only used to compute the expected outputs, and is never shown to the user.
+- tests: 2-4 cases that define correct behavior. "stdin" is what the program types/reads.
+  Make the program's behavior depend on stdin (read values with input()/scanf/Scanner/etc.) so the
+  cases differ; if the template hardcodes its sample values, keep a single case with empty stdin.
+  "expected_output" must be the exact stdout of reference_code for that stdin, plain program output
+  only (no prompts or labels) so it can be compared automatically.
+
+Respond with STRICT JSON only (no markdown fences, no commentary):
+{{
+  "title": "short exercise title",
+  "task": "what the user must accomplish, in clear English",
+  "template_code": "the partial program with TODO markers",
+  "blanks": ["what to write at TODO 1", "what to write at TODO 2"],
+  "hints": ["hint without revealing the answer"],
+  "reference_code": "the complete worked solution (private, never shown)",
+  "tests": [{{"name": "case 1", "stdin": "input the program reads", "expected_output": "exact stdout"}}]
+}}"""
+
+def _normalize_output(text: str) -> str:
+    """Compare program output ignoring trailing spaces and blank lines."""
+    lines = [line.rstrip() for line in str(text or "").replace("\r\n", "\n").split("\n")]
+    while lines and not lines[-1]:
+        lines.pop()
+    return "\n".join(lines)
+
+# Markers that prove a template really has gaps the user must fill.
+_GAP_RE = re.compile(r"(TODO|FIXME|NotImplementedError|throw new Error|raise NotImplementedError|your code here|\.\.\.)", re.I)
+
+async def _make_exercise(body: AiTestRequest, feedback: str = "") -> tuple[dict[str, Any], str]:
+    """Generate one exercise and report a problem with it ("" when it is usable)."""
+    prompt = _test_prompt(body.code, body.language, body.topic) + feedback
+    data = _parse_ai_json(await _ai_generate(prompt, 0.45, TEST_SCHEMA))
+    template = str(data.get("template_code") or "").strip()
+    if not template:
+        raise HTTPException(502, "AI did not return an exercise template.")
+    tests: list[dict[str, str]] = []
+    for case in data.get("tests") or []:
+        if not isinstance(case, dict):
+            continue
+        tests.append({
+            "name": str(case.get("name") or f"case {len(tests) + 1}")[:160],
+            "stdin": str(case.get("stdin") or "")[:20_000],
+            "expected_output": str(case.get("expected_output") or "")[:20_000],
+        })
+    if not tests:
+        raise HTTPException(502, "AI did not return any test cases for this exercise.")
+
+    runnable = body.language in RUNTIME_LANGUAGES
+    # Expected outputs are computed by actually running the private reference
+    # solution, so a wrong guess from the model can never mark correct work as
+    # failing (or accept wrong work). The reference itself is dropped below.
+    reference = str(data.get("reference_code") or "").strip()
+    if reference and runnable:
+        verified_tests: list[dict[str, str]] = []
+        for case in tests:
+            outcome = await _check_code(reference, body.language, case["stdin"])
+            # A case the reference solution itself cannot run is unusable: its
+            # expected output would be a guess, so it is dropped entirely.
+            if outcome and outcome.get("status") == "Success":
+                case["expected_output"] = _normalize_output(str(outcome.get("stdout") or ""))
+                verified_tests.append(case)
+        if verified_tests:
+            tests = verified_tests
+
+    problem = ""
+    if not _GAP_RE.search(template):
+        problem = (
+            "template_code contains no TODO gap markers, so the important logic is already written. "
+            "Leave a real gap (raise NotImplementedError / throw new Error / /* TODO: ... */ with no code) "
+            "and mark it with a TODO comment."
+        )
+    elif reference and template.strip() == reference.strip():
+        problem = "template_code is identical to the reference solution. Remove the logic the user must write."
+    elif runnable:
+        solved = True
+        for case in tests:
+            outcome = await _check_code(template, body.language, case["stdin"])
+            ok = (
+                outcome is not None
+                and outcome.get("status") == "Success"
+                and _normalize_output(str(outcome.get("stdout") or "")) == _normalize_output(case["expected_output"])
+            )
+            if not ok:
+                solved = False
+                break
+        if solved:
+            problem = (
+                "template_code already passes every test, so there is nothing to practice. "
+                "Replace the logic the user must write with an empty TODO placeholder."
+            )
+
+    return {
+        "language": body.language,
+        "title": str(data.get("title") or "Practice exercise")[:160],
+        "task": str(data.get("task") or "")[:4000],
+        "template_code": template,
+        "blanks": [str(b)[:300] for b in data.get("blanks") or []][:10],
+        "hints": [str(h)[:400] for h in data.get("hints") or []][:10],
+        "tests": tests[:8],
+        # No solution is ever sent: reference_code is used only for grading, and
+        # the user has to write the missing part themselves.
+        "solution_included": False,
+    }, problem
+
+@app.post("/api/ai-test")
+async def ai_test(body: AiTestRequest):
+    """Create a fill-in-the-blank exercise, never a finished solution.
+
+    The template is verified to fail its own tests before it is returned, so the
+    user always has something real to write. If the model hands back an already
+    solved template it is asked again with that feedback.
+    """
+    payload, problem = await _make_exercise(body)
+    for _ in range(2):
+        if not problem:
+            break
+        payload, problem = await _make_exercise(body, f"\n\nYour previous attempt was rejected: {problem}")
+    if problem:
+        raise HTTPException(502, f"AI could not build a usable exercise ({problem}) Try again, or change the topic.")
+    return payload
+
+@app.post("/api/ai-test/check")
+async def check_answer(body: CheckAnswerRequest):
+    """Grade the user's code against the exercise's test cases by running it."""
+    if body.language not in RUNTIME_LANGUAGES:
+        raise HTTPException(400, f"{body.language} cannot be executed here, so answers cannot be checked automatically.")
+    if not body.tests:
+        raise HTTPException(400, "No test cases to check against.")
+    results: list[dict[str, Any]] = []
+    passed = 0
+    for case in body.tests:
+        outcome = await _check_code(body.code, body.language, case.stdin)
+        if outcome is None:
+            raise HTTPException(400, f"{body.language} cannot be executed here.")
+        actual = str(outcome.get("stdout") or "")
+        expected = case.expected_output
+        ok = outcome.get("status") == "Success" and _normalize_output(actual) == _normalize_output(expected)
+        if ok:
+            passed += 1
+        results.append({
+            "name": case.name or f"case {len(results) + 1}",
+            "passed": ok,
+            "stdin": case.stdin,
+            "expected_output": expected,
+            "actual_output": actual,
+            "stderr": str(outcome.get("stderr") or "")[:4000],
+            "status": outcome.get("status"),
+        })
+    return {
+        "passed": passed,
+        "total": len(results),
+        "all_passed": passed == len(results),
+        "results": results,
+    }
+
 @app.post("/api/rooms/{rid}/ai-fix")
 async def ai_fix(rid: str, actor_id: str, body: AiRequest):
     r=get_room(rid); member=r.members.get(actor_id)

@@ -13,3 +13,25 @@ html,body,#root{height:100%}body{background:#0b0d12}.app.codepilot{height:100vh;
 .codepilot .ide-editor,.codepilot .ide-editor .monaco-editor,
 .codepilot .ide-editor .monaco-editor-background,.codepilot .ide-editor .margin{background:#fff!important}
 .ai-tool-nav button.selected{border-color:#8068df;background:#312850;color:#e3d9ff}.ai-tool-content{display:flex;flex-direction:column;gap:12px;color:#b9bbc6;font-size:12px}.ai-tool-content label{display:flex;flex-direction:column;gap:7px;color:#9294a2;font-size:11px}.ai-tool-content select{background:#20212a;color:#e3e4ea;border:1px solid #393a45;border-radius:7px;padding:9px}.ai-tool-content>button,.ai-tool-nav button{cursor:pointer}.ai-tool-content>button{align-self:flex-start;background:#7c5cff;color:#fff;padding:9px 12px;border-radius:7px;font-size:12px;font-weight:700}.in-ai-panel.aiask-body{min-height:130px;max-height:46%;flex:1;padding:12px 0}.in-ai-panel.aiask-form{margin:0 -16px -16px;flex:none}.in-ai-panel .empty{margin-top:12px}
+
+/* AI Test — fill-in-the-blank practice */
+.practice-topic{background:#20212a;border:1px solid #393a45;border-radius:7px;padding:9px;color:#e3e4ea;font-size:12px;outline:none}
+.practice-topic:focus{border-color:#6f58cf}
+.practice-card{display:flex;flex-direction:column;gap:9px;border:1px solid #2f3140;border-radius:10px;padding:12px;background:#171923}
+.practice-card>strong{font-size:13px;color:#fff}
+.practice-card p{margin:0;line-height:1.6}
+.practice-card b{color:#cfc6ff;font-size:11px;letter-spacing:.4px;text-transform:uppercase}
+.practice-card ol,.practice-card ul{margin:0;padding-left:20px;color:#c7c8d1}
+.practice-template{background:#0d0f16;border:1px solid #2b2d3a;border-radius:8px;padding:10px;overflow:auto;max-height:220px;font:12px/1.55 'DM Mono',monospace;white-space:pre;color:#d9dbe6}
+.practice-actions{display:flex;flex-wrap:wrap;gap:8px}
+.practice-actions button{background:#6f58cf;color:#fff;padding:8px 11px;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer}
+.practice-actions button.ghost{background:#20212a;color:#cfd0d8;border:1px solid #30313b}
+.practice-actions button:disabled{opacity:.55;cursor:not-allowed}
+.practice-results{display:flex;flex-direction:column;gap:7px}
+.practice-case{border-left:3px solid #3a3c4a;padding:7px 9px;background:#12141b;border-radius:6px;font-size:11.5px;color:#c7c8d1}
+.practice-case.pass{border-left-color:#2fa27a}
+.practice-case.fail{border-left-color:#e0695d}
+.practice-case p{margin:4px 0}
+.practice-case code{background:#20222c;padding:1px 5px;border-radius:4px;font-family:'DM Mono',monospace;font-size:11px;white-space:pre-wrap;word-break:break-word}
+.practice-case em{color:#9294a2;font-style:normal}
+.practice-case pre.warning{white-space:pre-wrap;font-size:11px;margin:6px 0 0}

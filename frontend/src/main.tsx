@@ -275,6 +275,7 @@ function App(){
  const [aiProviderStatus,setAiProviderStatus]=useState<{provider:string;model:string;configured:boolean}|null>(null)
  const [askChat,setAskChat]=useState<{role:'user'|'assistant';text:string}[]>([]),[askMsg,setAskMsg]=useState(''),[asking,setAsking]=useState(false),[askIntent,setAskIntent]=useState<'ask'|'generate'>('ask')
  const [aiTool,setAiTool]=useState<'home'|'test'|'translate'|'fix'|'ask'>('home'),[translateLanguage,setTranslateLanguage]=useState('javascript')
+ const [testExercise,setTestExercise]=useState<any>(null),[testBusy,setTestBusy]=useState(false),[testError,setTestError]=useState(''),[testCheck,setTestCheck]=useState<any>(null),[testChecking,setTestChecking]=useState(false),[testTopic,setTestTopic]=useState('')
  const [version,setVersion]=useState(1),[activity,setActivity]=useState<string[]>(['Workspace created'])
  const [entry,setEntry]=useState('')
  const [importOpen,setImportOpen]=useState(false),[importTab,setImportTab]=useState<'upload'|'path'|'github'>('upload'),[importPath,setImportPath]=useState(''),[importUrl,setImportUrl]=useState(''),[importBranch,setImportBranch]=useState(''),[importing,setImporting]=useState(false),[importMsg,setImportMsg]=useState('')
@@ -615,7 +616,9 @@ const remoteStates=(awareness:any,doc?:Y.Doc)=>{
  const openAiTool=(tool:'home'|'test'|'translate'|'fix'|'ask')=>{setAiTool(tool);setAiPanelOpen(true);if(tool==='translate'&&tabs[active])setTranslateLanguage(['python','javascript','typescript','java','c','cpp'].find(lang=>lang!==tabs[active].language)||'python')}
  const reviewActiveFile=()=>{const t=tabs[active];if(!t)return;const code=currentCode();openAiTool('ask');setAskIntent('ask');void submitAsk(`Review ${t.path}`,`Review this ${t.language} source file (${t.path}). Explain the review in clear English. Check correctness, readability, edge cases, and security risks. Return prioritized findings with line references when possible. If no issues are found, say that clearly. Do not rewrite the whole file unless needed.\n\n\`\`\`${t.language}\n${code}\n\`\`\``)}
  const startCodeGeneration=()=>{openAiTool('ask');setAskIntent('generate');setAskMsg('')}
- const generateTests=()=>{const t=tabs[active];if(!t)return;openAiTool('test');void submitAsk(`Generate tests for ${t.path}`,`Generate comprehensive test cases for this ${t.language} code in ${t.path}. Include normal cases, edge cases, and invalid inputs where relevant. Prefer runnable tests using the language's common testing conventions. Explain how to run them, and put the test code in a fenced code block.\n\n\`\`\`${t.language}\n${currentCode()}\n\`\`\``)}
+ const generateTests=async()=>{const t=tabs[active];openAiTool('test');setTestBusy(true);setTestError('');setTestCheck(null);try{const exercise=await api('/ai-test',{method:'POST',body:JSON.stringify({code:t?currentCode():'',language:t?.language||'python',topic:testTopic})});setTestExercise(exercise)}catch(error){setTestExercise(null);setTestError(error instanceof Error?error.message:String(error))}finally{setTestBusy(false)}}
+ const insertTemplate=()=>{const ex=testExercise;if(!ex?.template_code)return;void importCode(ex.template_code,ex.language);setTestCheck(null)}
+ const checkTestAnswer=async()=>{const ex=testExercise;const t=tabs[active];if(!ex||!t)return;setTestChecking(true);setTestError('');try{const r=await api('/ai-test/check',{method:'POST',body:JSON.stringify({code:currentCode(),language:t.language,tests:ex.tests})});setTestCheck(r);addActivity(r.all_passed?`✓ All ${r.total} practice tests passed`:`Practice: ${r.passed}/${r.total} tests passed`)}catch(error){setTestError(error instanceof Error?error.message:String(error))}finally{setTestChecking(false)}}
  const translateCode=()=>{const t=tabs[active];if(!t)return;openAiTool('translate');void submitAsk(`Translate ${t.path} to ${translateLanguage}`,`Convert this ${t.language} program into ${translateLanguage}. Preserve behavior and explain any language-specific changes briefly. Put the complete translated program in a fenced code block labeled ${translateLanguage}.\n\n\`\`\`${t.language}\n${currentCode()}\n\`\`\``)}
  const applyFix=async()=>{const t=tabs[active];if(!t||!fixData)return;const fixed=fixData.fixed_code||t.code;const entry=openDocsRef.current.get(t.path);if(entry){entry.yt.delete(0,entry.yt.length);entry.yt.insert(0,fixed)}else if(editorRef.current?.getModel()){editorRef.current.getModel().setValue(fixed)}setTabs(fs=>fs.map((x,i)=>i===active?{...x,code:fixed}:x));setErrors('');setCompilerMarkers('');setVersion(v=>v+1)
   // Wait for the save: Run Project executes what is on disk, and a fire-and-forget
@@ -705,9 +708,38 @@ const remoteStates=(awareness:any,doc?:Y.Doc)=>{
   <AiPanel open={aiPanelOpen} onClose={()=>setAiPanelOpen(false)}><div className="ai-intro"><span className="eyebrow">AI CODING ASSISTANT</span><h2>AI Tools</h2><p>Test, translate, fix, or ask about your code.</p></div><div className="ai-actions ai-tool-nav">{([['test','AI Test'],['translate','AI Translate'],['fix','AI Fix'],['ask','AI Ask']] as const).map(([tool,label])=><button key={tool} className={aiTool===tool?'selected':''} onClick={()=>openAiTool(tool)}>{label}</button>)}</div>
    {aiTool==='home'&&<div className="empty">Choose an AI tool above. {tabs[active]?`The active file, ${tabs[active].name}, will be used as context.`:'Open a file to use AI Test, AI Translate, or AI Fix.'}</div>}
    {aiTool==='fix'&&(ai?<div className="thinking">✦ Preparing a full explanation of {tabs[active]?.name||'the active file'}…</div>:aiError?<p className="warning">{aiError}</p>:fixData&&fix?<ExplainResult data={fixData} currentCode={currentCode()} onApply={applyFix} onDismiss={()=>{setFix(false);setFixData(null)}}/>:<div className="empty"><p>{tabs[active]?`Ready to explain or fix ${tabs[active].name}.`:'Open a file to use AI Fix.'}</p><button onClick={analyze} disabled={!tabs[active]||ai}>✦ Explain & fix active file</button></div>)}
-   {aiTool==='test'&&<div className="ai-tool-content"><p>Generate test cases for {tabs[active]?.name||'the active file'}, including edge cases.</p><button onClick={generateTests} disabled={!tabs[active]||asking}>✦ Generate test cases</button></div>}
+   {aiTool==='test'&&<div className="ai-tool-content practice">
+    <p>Practice mode: the AI writes <b>part</b> of the program and leaves blanks. You write the missing part, then it checks your answer by running real test cases — the full solution is never shown.</p>
+    <input className="practice-topic" value={testTopic} onChange={e=>setTestTopic(e.target.value)} placeholder="Optional topic — e.g. loops, dictionaries, recursion"/>
+    <button onClick={()=>void generateTests()} disabled={testBusy}>{testBusy?'✦ Building exercise…':'✦ Generate practice exercise'}</button>
+    {testError&&<p className="warning">{testError}</p>}
+    {testExercise&&<div className="practice-card">
+     <strong>{testExercise.title}</strong>
+     {testExercise.task&&<p>{testExercise.task}</p>}
+     {!!testExercise.blanks?.length&&<><b>Fill in</b><ol>{testExercise.blanks.map((b:string,i:number)=><li key={i}>{b}</li>)}</ol></>}
+     {!!testExercise.hints?.length&&<><b>Hints</b><ul>{testExercise.hints.map((h:string,i:number)=><li key={i}>{h}</li>)}</ul></>}
+     <pre className="practice-template">{testExercise.template_code}</pre>
+     <div className="practice-actions">
+      <button className="ghost" onClick={insertTemplate} disabled={role==='viewer'}>⇩ Insert this template into the editor</button>
+      <button onClick={()=>void checkTestAnswer()} disabled={testChecking||!tabs[active]}>{testChecking?'Checking…':'✓ Check my answer'}</button>
+     </div>
+     <p className="hint">Write the missing part in the editor, then press <b>Check my answer</b>. Every case is run for real; expected outputs come from a private reference, not from the AI's guess.</p>
+     {testCheck&&<div className="practice-results">
+      <p className={testCheck.all_passed?'ok':'warning'}>{testCheck.all_passed?`✓ All ${testCheck.total} tests passed`:`${testCheck.passed}/${testCheck.total} tests passed — keep going`}</p>
+      {testCheck.results.map((r:any,i:number)=><div key={i} className={'practice-case '+(r.passed?'pass':'fail')}>
+       <b>{r.passed?'✓':'✗'} {r.name}</b>
+       {!r.passed&&<>
+        <p><em>Input:</em> <code>{r.stdin||'(none)'}</code></p>
+        <p><em>Expected:</em> <code>{r.expected_output||'(no output)'}</code></p>
+        <p><em>Your output:</em> <code>{r.actual_output||'(no output)'}</code></p>
+        {r.stderr&&<pre className="warning">{r.stderr}</pre>}
+       </>}
+      </div>)}
+     </div>}
+    </div>}
+   </div>}
    {aiTool==='translate'&&<div className="ai-tool-content"><p>Convert the active file to another programming language.</p><label>Target language<select value={translateLanguage} onChange={e=>setTranslateLanguage(e.target.value)}>{['python','javascript','typescript','java','c','cpp'].filter(lang=>lang!==tabs[active]?.language).map(lang=><option key={lang} value={lang}>{lang}</option>)}</select></label><button onClick={translateCode} disabled={!tabs[active]||asking}>✦ Translate code</button></div>}
-   {aiTool!=='ask'&&askChat.length>0&&<div className="aiask-body in-ai-panel">{askChat.map((m,i)=>{const code=m.role==='assistant'?extractCode(m.text):null;return <div key={i} className={'ask-msg '+m.role}><span className="ask-tag">{m.role==='user'?(name[0]||'Y'):'AI'}</span><div><p>{m.text}</p>{code&&(role==='host'||role==='editor')&&<button className="import" onClick={()=>importCode(code.code,code.label)}>⇩ Import to Workspace</button>}</div></div>})}{asking&&<div className="ask-msg assistant"><span className="ask-tag">AI</span><p className="thinking">✦ AI is thinking…</p></div>}</div>}
+   {aiTool!=='ask'&&aiTool!=='test'&&askChat.length>0&&<div className="aiask-body in-ai-panel">{askChat.map((m,i)=>{const code=m.role==='assistant'?extractCode(m.text):null;return <div key={i} className={'ask-msg '+m.role}><span className="ask-tag">{m.role==='user'?(name[0]||'Y'):'AI'}</span><div><p>{m.text}</p>{code&&(role==='host'||role==='editor')&&<button className="import" onClick={()=>importCode(code.code,code.label)}>⇩ Import to Workspace</button>}</div></div>})}{asking&&<div className="ask-msg assistant"><span className="ask-tag">AI</span><p className="thinking">✦ AI is thinking…</p></div>}</div>}
    {aiTool==='ask'&&<><div className="aiask-body in-ai-panel">{askChat.length===0?<div className="empty">Ask a programming question or describe code to generate. Your active file can be included as context.</div>:askChat.map((m,i)=>{const code=m.role==='assistant'?extractCode(m.text):null;return <div key={i} className={'ask-msg '+m.role}><span className="ask-tag">{m.role==='user'?(name[0]||'Y'):'AI'}</span><div><p>{m.text}</p>{code&&(role==='host'||role==='editor')&&<button className="import" onClick={()=>importCode(code.code,code.label)}>⇩ Import to Workspace</button>}</div></div>})}{asking&&<div className="ask-msg assistant"><span className="ask-tag">AI</span><p className="thinking">✦ AI is thinking…</p></div>}</div><form className="aiask-form in-ai-panel" onSubmit={e=>{e.preventDefault();sendAsk()}}><input value={askMsg} onChange={e=>setAskMsg(e.target.value)} placeholder={askIntent==='generate'?'Describe the code you want to generate…':'Ask anything about code…'}/><button disabled={asking||!askMsg.trim()}>↑</button></form></>}
   </AiPanel>
  </aside></main> {fsError&&<div className="toast warn" onClick={()=>setFsError('')}>⚠ {fsError}</div>}
