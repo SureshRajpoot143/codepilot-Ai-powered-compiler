@@ -941,6 +941,10 @@ async def run_ai_fix(body: AiRequest) -> dict[str, Any]:
     fixed = original
     verified: bool | None = None
     needs_input = checked and _needs_input(probe) if probe else False
+    # The program stopped only because it wanted stdin. Rewriting it in that
+    # case is what produced bogus "fixed the main module error" answers.
+    only_needs_input = needs_input
+    probe_ok = bool(probe) and probe.get("status") == "Success"
     attempts = 0
     current = original
     current_error = error
@@ -969,8 +973,27 @@ async def run_ai_fix(body: AiRequest) -> dict[str, Any]:
         current_error = _result_text(check)
         current = candidate
 
-    if probe is not None and probe.get("status") == "Success" and fixed.strip() == original.strip():
+    if probe_ok:
+        # It already runs. Never let the model rewrite working code just to
+        # look useful — the user only gets the explanation.
+        fixed = original
         verified = True
+        data["explanation"] = ""
+        data["changes"] = []
+        data["root_cause"] = "No errors found — the current code compiled and ran successfully."
+
+    if only_needs_input:
+        # Never hand back a rewritten program for a run that merely lacked input:
+        # the source was fine, the run just had nothing on stdin.
+        fixed = original
+        verified = None
+        data["explanation"] = ""
+        data["changes"] = []
+        data["root_cause"] = (
+            "This is not a code error: the program is waiting for keyboard input and the run provided none. "
+            "The code is left unchanged — open the Input tab, enter the values the program should read "
+            "(one per line), then press ▶ Run with this input."
+        )
 
     return {
         "base_version": int(time.time()),
