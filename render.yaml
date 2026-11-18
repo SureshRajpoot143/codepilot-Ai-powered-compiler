@@ -24,8 +24,10 @@ services:
         sync: false
       - key: JDOODLE_CLIENT_SECRET
         sync: false
-      - key: GEMINI_API_KEY
+      - key: OPENROUTER_API_KEY
         sync: false
+      - key: OPENROUTER_MODEL
+        value: openai/gpt-4o-mini
 
   # y-websocket collaboration server
   - type: web

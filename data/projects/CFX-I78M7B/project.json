@@ -1,0 +1,44 @@
+{
+  "project_id": "CFX-I78M7B",
+  "name": "You's workspace",
+  "owner_id": "U-G103GFSJ",
+  "created_at": 1794910862.6936278,
+  "updated_at": 1794911030.5149398,
+  "language": "python",
+  "members": {
+    "U-G103GFSJ": {
+      "id": "U-G103GFSJ",
+      "name": "You",
+      "device": "This device",
+      "role": "host"
+    }
+  },
+  "filesystem": [
+    {
+      "id": "ecce64fc839a",
+      "parent_id": "",
+      "name": "main.py",
+      "path": "main.py",
+      "is_directory": false,
+      "language": "python",
+      "created_at": 1794910862.697255
+    },
+    {
+      "id": "2b6b8f9573e4",
+      "parent_id": "",
+      "name": "README.md",
+      "path": "README.md",
+      "is_directory": false,
+      "language": "markdown",
+      "created_at": 1794910862.714067
+    },
+    {
+      "id": "80124c7aa2e9",
+      "parent_id": "",
+      "name": "ai_javascript.js",
+      "path": "ai_javascript.js",
+      "is_directory": false,
+      "language": "javascript"
+    }
+  ]
+}

@@ -7,8 +7,8 @@
 - Real-time editor built on **React + Monaco + Yjs** (`y-monaco`, `y-websocket`) — edits are CRDT deltas, not whole-document polling. A shared **virtual file tree** plus **one CRDT sub-room per open file** keeps keystroke sync scoped to people editing the same module.
 - Authoritative **FastAPI** service: room creation, join approval, role checks, workspace/persistence API, execution, and AI-fix orchestration. Rooms/projects are stored on disk (`backend/app/store.py`), so saved projects can be reopened later.
 - **JDoodle** remote compiler (Python, JavaScript, C, C++, Java) with stdout/compile-error/runtime-error output and inline Monaco error markers.
-- **Gemini** AI debugger that reads the last compiler output and proposes an applied-in-one-click fix.
-- **AI Ask** sidebar: a separate Gemini chat where you can ask any question or request a program, then import the answer's code as a new file in the shared workspace with one click.
+- **OpenRouter** AI debugger that reads the last compiler output and proposes an applied-in-one-click fix.
+- **AI Ask** sidebar: ask questions or request a program through the configured OpenRouter model, then import code into the shared workspace with one click.
 - **Presence**: colored dots on the file tree and editor tabs show exactly who is editing each module; the sidebar lists everyone and their current file.
 - **Import Project**: bring any external project into a room three ways — pick a folder/files from the browser, give a folder path on the backend machine, or clone a GitHub URL (`git clone`) — files merge into the room store and are shared with everyone in real time.
 - **Run Project**: besides the single-file "Run" (JDoodle), a "Run Project" button executes the whole multi-file project like VS Code, directly on the backend machine, so sibling imports/headers/stdin work — with an entry-file dropdown (auto-detects `main.*`).
@@ -23,7 +23,7 @@ flowchart LR
   B[Mobile: Monaco + Yjs] <-- WebSocket CRDT --> C
   A & B <-- room events /api + /ws --> F[FastAPI :8000]
   F --> J[JDoodle compiler API]
-  F --> G[Gemini API]
+  F --> G[OpenRouter API]
   F --> M[(MongoDB - optional)]
   F --> R[(Redis - optional)]
   A & B <-- UI --> V[Vite dev server :5173]:::v
@@ -80,7 +80,8 @@ Edit `.env`:
 | Variable | Purpose |
 |---|---|
 | `JDOODLE_CLIENT_ID` / `JDOODLE_CLIENT_SECRET` | Real compiler output via JDoodle (create a free account at jdoodle.com) |
-| `GEMINI_API_KEY` | AI Debugger (create at aistudio.google.com); the key must be valid for `gemini-3.6-flash` |
+| `OPENROUTER_API_KEY` | AI Debugger and AI Ask (create a key at [OpenRouter](https://openrouter.ai/keys)); keep it in the backend environment, never in frontend variables |
+| `OPENROUTER_MODEL` | Optional model slug; defaults to `openai/gpt-4o-mini` |
 | `MONGODB_URI` / `REDIS_URL` | Optional persistence/pub-sub for multi-instance deployments; unused in single-server mode |
 
 Then start the three processes (each in its own terminal):
@@ -118,8 +119,8 @@ Open `http://localhost:5173`.
 5. **Open content in sync** — new rooms are bootstrapped from disk; files open with saved content instantly (before the collab relay initializes). Edits auto-save while you type.
 6. **Reopen saved projects** — on the landing screen, saved projects appear under **"reopen a saved project"**. Opening one restores the whole workspace (tree, contents, members).
 7. **Run** — the Run button sends the exact active-editor snapshot to JDoodle. Output/errors appear for everyone, with error lines marked in the editor.
-8. **AI Fix** — click **✦ AI Fix**. The backend sends the code plus the last compiler error to Gemini and shows a proposal (root cause, explanation, changed file). **Apply Fix** replaces the shared document; **Reject** dismisses it.
-9. **AI Ask** — click **✦ AI Ask** (sidebar or header) to open a left slide-out chat. Ask anything or request a program; Gemini replies in the panel. When an answer contains a code block, an **⇩ Import to Workspace** button appears under it — it saves the code as a new file (unique name, matching language) and opens it for everyone.
+8. **AI Fix** — click **✦ AI Fix**. The backend sends the code plus the last compiler error to the configured OpenRouter model and shows a proposal (root cause, explanation, changed file). **Apply Fix** replaces the shared document; **Reject** dismisses it.
+9. **AI Ask** — click **✦ AI Ask** (sidebar or header) to open a left slide-out chat. Ask anything or request a program; OpenRouter replies in the panel. When an answer contains a code block, an **⇩ Import to Workspace** button appears under it — it saves the code as a new file (unique name, matching language) and opens it for everyone.
 10. **Members & leaving** — everyone in the room sees the full online list (names, devices, roles, current file) in the sidebar; the host is always visible too. **⏻ Leave** (guests/editors) disconnects cleanly and notifies the room. The host's button shows **⏻ Close Room**, which deletes the room and disconnects everyone.
 11. **Host controls** — only the host receives and can **Accept/Reject** join requests (non-hosts get HTTP 403). The host can also **✕ remove any member** directly from the ONLINE list; the removed member is notified and returned to the landing screen. Hosts can also rename/delete files and folders.
 12. **Import an external project** — click **⇩ Import** in the header: pick a folder/files from your device, paste a path on the backend machine, or clone a GitHub repo. Files (minus junk like `node_modules`/`.git`/binaries) merge into the workspace and appear for everyone instantly.
@@ -192,10 +193,10 @@ Permissions are enforced server-side: only the Host may approve/reject; only Edi
 
 ## AI fix details
 
-The backend calls:
+The backend calls OpenRouter's OpenAI-compatible chat completions endpoint:
 
 ```
-POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=GEMINI_API_KEY
+POST https://openrouter.ai/api/v1/chat/completions
 ```
 
 with a prompt containing the language, the last compiler/runtime `stderr`, and the source code, requesting strict JSON:
@@ -209,26 +210,26 @@ with a prompt containing the language, the last compiler/runtime `stderr`, and t
 }
 ```
 
-If `GEMINI_API_KEY` is missing or still a placeholder, the API returns `503` and the UI shows **"AI is not configured. Set GEMINI_API_KEY in .env."** The suggestion is only applied when the user clicks **Apply Fix** — it is never written back automatically.
+Set `OPENROUTER_API_KEY` in the backend `.env` (and optionally `OPENROUTER_MODEL`), then restart the backend. The key stays on the server; `/api/ai-status` returns only whether it is configured and which model is selected. The suggestion is only applied when the user clicks **Apply Fix** — it is never written back automatically.
 
 ## AI Ask details
 
-`POST /api/ask` sends the user's prompt to the same `gemini-3.6-flash` model (conversation context is kept client-side in the panel). The answer is returned as plain text that may contain one markdown fenced code block. The frontend extracts the block with a regex and renders an **⇩ Import to Workspace** button under the message (only for `Host`/`Editor` roles). Import saves the code as a new file named `ai_<language>[N].<ext>` (unique, matching language), seeds the shared Yjs tree + REST store, and opens it — so everyone in the room sees the new module appear in real time.
+`POST /api/ask` sends the user's prompt to the configured OpenRouter model (conversation context is kept client-side in the panel). Responses are requested in English and may contain one markdown fenced code block. The frontend extracts the block with a regex and renders an **⇩ Import to Workspace** button under the message (only for `Host`/`Editor` roles). Import saves the code as a new file named `ai_<language>[N].<ext>` (unique, matching language), seeds the shared Yjs tree + REST store, and opens it — so everyone in the room sees the new module appear in real time.
 
 ## Troubleshooting
 
 | Symptom | Fix |
 |---|---|
 | "Execution unavailable" | Set `JDOODLE_CLIENT_ID` / `JDOODLE_CLIENT_SECRET` and restart the backend. |
-| "AI is not configured" | Set a real `GEMINI_API_KEY` in `.env` and **restart the backend** (env is read at startup). |
-| AI returns the same code / odd fixes | Old keys may lack access to `gemini-3.6-flash`; regenerate a key at aistudio.google.com. |
+| "AI is not configured" | Set `OPENROUTER_API_KEY` in the backend `.env` and **restart the backend** (env is read at startup). |
+| OpenRouter request fails | Check the key, model slug, and model access in the OpenRouter dashboard. |
 | Phone cannot open the link | Share dialog → enter the laptop's LAN IP like `192.168.1.2:5173`. `localhost` always means the scanning device. |
 | Phones can't join/edit | The collab server binds `0.0.0.0:1234`; it must be running (`npm run collab`) and reachable over Wi-Fi. |
 | After changing `.env`, AI still says not configured | Restart uvicorn — `--reload` reloads Python modules but the already-loaded environment persists. |
 
 ## Production notes
 
-- Configure JDoodle and Gemini credentials server-side; never expose them in the frontend.
+- Configure JDoodle and OpenRouter credentials server-side; never expose them in the frontend.
 - Rooms/projects persist to disk via `backend/app/store.py` (atomic writes under `data/`); the collab server shares that store for seeding and auto-save. For multi-instance deployment, swap the disk store for MongoDB/PostgreSQL and add Redis pub/sub for y-websocket.
 - Persist version snapshots (not keystrokes), add JWT guest/session tokens, rate limits, and endpoint-level tests.
 - AI suggestions carry a `base_version`; on apply, reject/re-analyse if the document has advanced.

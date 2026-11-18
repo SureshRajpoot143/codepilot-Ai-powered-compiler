@@ -664,93 +664,64 @@ async def execute_project(rid: str, actor_id: str, body: RunProjectRequest):
     result["entry"] = entry
     await broadcast(rid, "execution:result", result)
     return result
-GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent"
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+DEFAULT_OPENROUTER_MODEL = "openai/gpt-4o-mini"
 
-def _gemini_keys() -> list[str]:
-    """All usable Gemini keys: GEMINI_API_KEYS (comma-separated pool) plus legacy GEMINI_API_KEY."""
-    pool = os.getenv("GEMINI_API_KEYS", "")
-    keys = [k.strip() for k in pool.split(",") if k.strip() and not k.strip().startswith("your-gemini")]
-    legacy = os.getenv("GEMINI_API_KEY", "")
-    if legacy and not legacy.startswith("your-gemini") and legacy not in keys:
-        keys.append(legacy)
-    return keys
+def _openrouter_key() -> str:
+    key = os.getenv("OPENROUTER_API_KEY", "").strip()
+    return "" if key.startswith("your-openrouter") else key
 
-async def _gemini_generate(prompt: str, temperature: float) -> str:
-    """Call Gemini, rotating to the next key when one is rate-limited or invalid."""
-    keys = _gemini_keys()
-    if not keys:
-        raise HTTPException(503, "AI is not configured. Set GEMINI_APIKEYS in .env.")
-    last_error: Exception | None = None
-    async with httpx.AsyncClient(timeout=90) as client:
-        for key in keys:
-            try:
-                response = await client.post(
-                    GEMINI_URL,
-                    params={"key": key},
-                    json={"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": temperature}},
-                )
-                response.raise_for_status()
-                return response.json()["candidates"][0]["content"]["parts"][0]["text"]
-            except httpx.HTTPStatusError as exc:
-                # 429 quota exhausted / 403 key invalid -> try next key; other errors are retryable with a fresh key too
-                last_error = exc
-                continue
-            except httpx.HTTPError as exc:
-                raise HTTPException(502, f"AI request failed: {exc}") from exc
-            except (KeyError, IndexError) as exc:
-                raise HTTPException(502, "AI returned an unexpected response.") from exc
-    return None
-
-DEVIN_BASE = "https://api.devin.ai/v1"
-
-async def _devin_generate(prompt: str, schema: dict) -> str:
-    """Fallback: run the same request through a Devin API session and return its structured output as JSON text."""
-    key = os.getenv("DEVIN_API_KEY", "")
-    if not key:
-        raise HTTPException(503, "AI is not configured. Set DEVIN_API_KEY in .env.")
-    full_prompt = (f"{prompt}\n\nIMPORTANT: As soon as you know the answer, write it into the structured output "
-                   f"exactly matching this JSON schema:\n{json.dumps(schema)}")
-    async with httpx.AsyncClient(timeout=120) as client:
-        created = await client.post(
-            f"{DEVIN_BASE}/sessions",
-            headers={"Authorization": f"Bearer {key}"},
-            json={"prompt": full_prompt, "structured_output_schema": schema, "max_acu_limit": 15, "unlisted": True},
-        )
-        created.raise_for_status()
-        sid = created.json()["session_id"]
-        deadline = time.time() + 300
-        while time.time() < deadline:
-            await asyncio.sleep(10)
-            info = await client.get(f"{DEVIN_BASE}/sessions/{sid}", headers={"Authorization": f"Bearer {key}"})
-            info.raise_for_status()
-            data = info.json()
-            enum_status = data.get("status_enum") or data.get("status")
-            if enum_status in ("finished", "exit"):
-                out = data.get("structured_output")
-                if out is None:
-                    raise HTTPException(502, "Devin session finished without a structured answer.")
-                return json.dumps(out) if not isinstance(out, str) else out
-            if enum_status in ("error", "expired", "suspended") or data.get("status") == "Error":
-                raise HTTPException(502, f"Devin session ended unexpectedly ({enum_status or data.get('status')}).")
-    raise HTTPException(504, "Devin session timed out; try again.")
+def _openrouter_model() -> str:
+    return os.getenv("OPENROUTER_MODEL", DEFAULT_OPENROUTER_MODEL).strip() or DEFAULT_OPENROUTER_MODEL
 
 async def _ai_generate(prompt: str, temperature: float, schema: dict | None = None) -> str:
-    """Gemini key pool first; when every key is exhausted/unavailable, automatically fall back to Devin."""
-    if _gemini_keys():
-        text = await _gemini_generate(prompt, temperature)
-        if text is not None:
-            return text
-    devin_key = os.getenv("DEVIN_API_KEY", "")
-    if devin_key:
-        fallback_schema = schema or {"type": "object", "properties": {"answer": {"type": "string"}}, "required": ["answer"]}
-        return await _devin_generate(prompt, fallback_schema)
-    raise HTTPException(502, "All Gemini keys failed and no DEVIN_API_KEY fallback is configured.")
+    """Generate text through OpenRouter's OpenAI-compatible chat completions API."""
+    key = _openrouter_key()
+    if not key:
+        raise HTTPException(503, "AI is not configured. Set OPENROUTER_API_KEY in the backend .env.")
+
+    messages = [{"role": "user", "content": prompt}]
+    if schema:
+        messages.insert(0, {"role": "system", "content": (
+            "Return only a valid JSON object matching this schema. Do not use markdown fences or extra text.\n"
+            f"{json.dumps(schema)}"
+        )})
+
+    try:
+        async with httpx.AsyncClient(timeout=90) as client:
+            response = await client.post(
+                OPENROUTER_URL,
+                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                json={"model": _openrouter_model(), "messages": messages, "temperature": temperature},
+            )
+            response.raise_for_status()
+            result = response.json()
+            content = result["choices"][0]["message"]["content"]
+            if isinstance(content, list):
+                content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
+            if not isinstance(content, str) or not content.strip():
+                raise HTTPException(502, "OpenRouter returned an empty response.")
+            return content
+    except httpx.HTTPStatusError as exc:
+        detail = exc.response.text[:500]
+        raise HTTPException(502, f"OpenRouter request failed ({exc.response.status_code}): {detail}") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, f"OpenRouter request failed: {exc}") from exc
+    except (KeyError, IndexError, TypeError, ValueError) as exc:
+        raise HTTPException(502, "OpenRouter returned an unexpected response.") from exc
+
+@app.get("/api/ai-status")
+async def ai_status():
+    """Expose provider readiness and model without ever returning the API key."""
+    return {"provider": "OpenRouter", "model": _openrouter_model(), "configured": bool(_openrouter_key())}
 
 async def run_ai_fix(body: AiRequest) -> dict[str, Any]:
-    """Ask Gemini to diagnose the code plus its compiler output and propose a fix."""
+    """Ask the configured OpenRouter model to diagnose code and propose a fix."""
     stderr = body.stderr.strip() or "(no error output — code did not run yet)"
-    prompt = f"""You are the AI debugger inside a shared coding room on a collaborative platform.
+    prompt = f"""You are the AI coding assistant inside a shared coding room on a collaborative platform.
 Language: {body.language}
+
+Explain the complete program in clear English. Give a thorough explanation of what the program does, its inputs and outputs, and how its main sections work. Explain the code as written, even when it has no errors.
 
 The last run produced this compiler/runtime output:
 ---
@@ -762,23 +733,29 @@ Current source code:
 {body.code}
 ```
 
-Diagnose the problem and respond with STRICT JSON only (no markdown fences, no commentary) with this exact shape:
+Then diagnose any compiler/runtime problem and respond with STRICT JSON only (no markdown fences, no commentary) with this exact shape:
 {{
+  "program_summary": "what this program does, in English",
+  "how_it_works": ["clear step-by-step explanation in English"],
+  "key_parts": ["important functions, variables, or concepts and what they do"],
   "root_cause": "short root-cause explanation",
   "explanation": "what the fix changes and why",
   "changes": ["concrete change 1", "concrete change 2"],
   "fixed_code": "the complete corrected source code"
 }}
-If there is no real problem, say so in root_cause and return the original code unchanged in fixed_code."""
+If there is no real problem, say so in root_cause, set explanation to an empty string, changes to an empty array, and return the original code unchanged in fixed_code. Do not invent a bug just to suggest a fix."""
     fix_schema = {
         "type": "object",
         "properties": {
+            "program_summary": {"type": "string"},
+            "how_it_works": {"type": "array", "items": {"type": "string"}},
+            "key_parts": {"type": "array", "items": {"type": "string"}},
             "root_cause": {"type": "string"},
             "explanation": {"type": "string"},
             "changes": {"type": "array", "items": {"type": "string"}},
             "fixed_code": {"type": "string"},
         },
-        "required": ["root_cause", "explanation", "changes", "fixed_code"],
+        "required": ["program_summary", "how_it_works", "key_parts", "root_cause", "explanation", "changes", "fixed_code"],
     }
     text = await _ai_generate(prompt, 0.2, fix_schema)
     text = text.strip()
@@ -792,6 +769,9 @@ If there is no real problem, say so in root_cause and return the original code u
         raise HTTPException(502, "AI did not return a valid JSON fix.") from exc
     return {
         "base_version": int(time.time()),
+        "program_summary": data.get("program_summary", ""),
+        "how_it_works": data.get("how_it_works", []),
+        "key_parts": data.get("key_parts", []),
         "root_cause": data.get("root_cause", "Review required."),
         "explanation": data.get("explanation", ""),
         "changes": data.get("changes", []),
@@ -800,14 +780,14 @@ If there is no real problem, say so in root_cause and return the original code u
 async def run_ai_ask(prompt: str) -> dict[str, str]:
     """Answer any question / write a program through the AI Ask chat."""
     prompt_text = (f"You are the AI assistant inside a collaborative coding platform. "
-                   f"Answer the question helpfully and concisely. When you include code, put the complete "
+                   f"Always answer in clear English, helpfully and concisely. When you include code, put the complete "
                    f"program inside a single markdown fenced code block. Do not interleave multiple blocks.\n\n"
                    f"User question:\n{prompt}")
     text = await _ai_generate(prompt_text, 0.4)
     return {"answer": text.strip()}
 @app.post("/api/ask")
 async def ai_ask(body: AskRequest):
-    """AI Ask sidebar: answer any question or write a program."""
+    """AI Ask sidebar: answer any question or write a program through OpenRouter."""
     return await run_ai_ask(body.prompt)
 @app.post("/api/ai-fix")
 async def ai_fix_current(body: AiRequest):

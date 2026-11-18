@@ -1,0 +1,36 @@
+{
+  "project_id": "CFX-EWQHBV",
+  "name": "You's workspace",
+  "owner_id": "U-G103GFSJ",
+  "created_at": 1794902626.574486,
+  "updated_at": 1794902626.5955489,
+  "language": "python",
+  "members": {
+    "U-G103GFSJ": {
+      "id": "U-G103GFSJ",
+      "name": "You",
+      "device": "This device",
+      "role": "host"
+    }
+  },
+  "filesystem": [
+    {
+      "id": "9372fb6e8695",
+      "parent_id": "",
+      "name": "main.py",
+      "path": "main.py",
+      "is_directory": false,
+      "language": "python",
+      "created_at": 1794902626.578597
+    },
+    {
+      "id": "7b7866b68475",
+      "parent_id": "",
+      "name": "README.md",
+      "path": "README.md",
+      "is_directory": false,
+      "language": "markdown",
+      "created_at": 1794902626.5864499
+    }
+  ]
+}
