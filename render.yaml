@@ -24,6 +24,8 @@ services:
         sync: false
       - key: JDOODLE_CLIENT_SECRET
         sync: false
+      - key: ONLINECOMPILER_API_KEY
+        sync: false
       - key: OPENROUTER_API_KEY
         sync: false
       - key: OPENROUTER_MODEL

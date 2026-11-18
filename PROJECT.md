@@ -6,7 +6,7 @@
 
 - Real-time editor built on **React + Monaco + Yjs** (`y-monaco`, `y-websocket`) — edits are CRDT deltas, not whole-document polling. A shared **virtual file tree** plus **one CRDT sub-room per open file** keeps keystroke sync scoped to people editing the same module.
 - Authoritative **FastAPI** service: room creation, join approval, role checks, workspace/persistence API, execution, and AI-fix orchestration. Rooms/projects are stored on disk (`backend/app/store.py`), so saved projects can be reopened later.
-- **JDoodle** remote compiler (Python, JavaScript, C, C++, Java) with stdout/compile-error/runtime-error output and inline Monaco error markers.
+- **OnlineCompiler.io** remote compiler (Python, JavaScript, C, C++, Java) tried first, with **JDoodle** as a second remote provider, then a local runtime on the backend machine — stdout/compile-error/runtime-error output and inline Monaco error markers from whichever provider runs.
 - **OpenRouter** AI debugger that reads the last compiler output and proposes an applied-in-one-click fix.
 - **AI Ask** sidebar: ask questions or request a program through the configured OpenRouter model, then import code into the shared workspace with one click.
 - **Presence**: colored dots on the file tree and editor tabs show exactly who is editing each module; the sidebar lists everyone and their current file.
@@ -79,7 +79,8 @@ Edit `.env`:
 
 | Variable | Purpose |
 |---|---|
-| `JDOODLE_CLIENT_ID` / `JDOODLE_CLIENT_SECRET` | Real compiler output via JDoodle (create a free account at jdoodle.com) |
+| `ONLINECOMPILER_API_KEY` | Remote compiler output via OnlineCompiler.io (free key at onlinecompiler.io) — tried first |
+| `JDOODLE_CLIENT_ID` / `JDOODLE_CLIENT_SECRET` | Fallback remote compiler output via JDoodle (create a free account at jdoodle.com) |
 | `OPENROUTER_API_KEY` | AI Debugger and AI Ask (create a key at [OpenRouter](https://openrouter.ai/keys)); keep it in the backend environment, never in frontend variables |
 | `OPENROUTER_MODEL` | Optional model slug; defaults to `openai/gpt-4o-mini` |
 | `MONGODB_URI` / `REDIS_URL` | Optional persistence/pub-sub for multi-instance deployments; unused in single-server mode |
@@ -118,13 +119,13 @@ Open `http://localhost:5173`.
 4. **Work on modules together** — the sidebar shows the shared file tree. Everyone can open files (they become tabs), create files/folders, rename, and delete. Different people can edit **different modules simultaneously**; presence dots on the tree and tabs show who is where. Editing the **same file** shows colored cursors and merges via CRDT.
 5. **Open content in sync** — new rooms are bootstrapped from disk; files open with saved content instantly (before the collab relay initializes). Edits auto-save while you type.
 6. **Reopen saved projects** — on the landing screen, saved projects appear under **"reopen a saved project"**. Opening one restores the whole workspace (tree, contents, members).
-7. **Run** — the Run button sends the exact active-editor snapshot to JDoodle. Output/errors appear for everyone, with error lines marked in the editor.
+7. **Run** — the Run button sends the exact active-editor snapshot to the backend, which runs it through OnlineCompiler.io first, then JDoodle, then a local runtime if neither online provider is available. Output/errors appear for everyone, with error lines marked in the editor.
 8. **AI Fix** — click **✦ AI Fix**. The backend sends the code plus the last compiler error to the configured OpenRouter model and shows a proposal (root cause, explanation, changed file). **Apply Fix** replaces the shared document; **Reject** dismisses it.
 9. **AI Ask** — click **✦ AI Ask** (sidebar or header) to open a left slide-out chat. Ask anything or request a program; OpenRouter replies in the panel. When an answer contains a code block, an **⇩ Import to Workspace** button appears under it — it saves the code as a new file (unique name, matching language) and opens it for everyone.
 10. **Members & leaving** — everyone in the room sees the full online list (names, devices, roles, current file) in the sidebar; the host is always visible too. **⏻ Leave** (guests/editors) disconnects cleanly and notifies the room. The host's button shows **⏻ Close Room**, which deletes the room and disconnects everyone.
 11. **Host controls** — only the host receives and can **Accept/Reject** join requests (non-hosts get HTTP 403). The host can also **✕ remove any member** directly from the ONLINE list; the removed member is notified and returned to the landing screen. Hosts can also rename/delete files and folders.
 12. **Import an external project** — click **⇩ Import** in the header: pick a folder/files from your device, paste a path on the backend machine, or clone a GitHub repo. Files (minus junk like `node_modules`/`.git`/binaries) merge into the workspace and appear for everyone instantly.
-13. **Run the whole project** — the workspace toolbar shows a **▶ Run Project** button with an entry-file dropdown (defaults to `main.py`/`main.js`/`Main.java`/…). It executes the project directly on the backend machine (like VS Code), so cross-file imports/headers and stdin all work; output/errors stream to everyone. The plain **▶ Run** still runs just the active file via JDoodle. Local runtimes needed on the backend: `python3`, `node`, `cc`/`c++`, `javac`.
+13. **Run the whole project** — the workspace toolbar shows a **▶ Run Project** button with an entry-file dropdown (defaults to `main.py`/`main.js`/`Main.java`/…). It executes the project directly on the backend machine (like VS Code), so cross-file imports/headers and stdin all work; output/errors stream to everyone. The plain **▶ Run** still runs just the active file through the online compilers (OnlineCompiler.io → JDoodle → local). Local runtimes needed on the backend: `python3`, `node`, `cc`/`c++`, `javac`.
 
 Roles: `Host` (created the room), `Editor` (approved, can edit/create/rename/run/AI), `Viewer` (read-only, reserved). Rooms have no session time limit — they stay live until the host closes them.
 
@@ -220,7 +221,7 @@ Set `OPENROUTER_API_KEY` in the backend `.env` (and optionally `OPENROUTER_MODEL
 
 | Symptom | Fix |
 |---|---|
-| "Execution unavailable" | Set `JDOODLE_CLIENT_ID` / `JDOODLE_CLIENT_SECRET` and restart the backend. |
+| "Execution unavailable" | Set `ONLINECOMPILER_API_KEY` (preferred) or `JDOODLE_CLIENT_ID` / `JDOODLE_CLIENT_SECRET` and restart the backend. |
 | "AI is not configured" | Set `OPENROUTER_API_KEY` in the backend `.env` and **restart the backend** (env is read at startup). |
 | OpenRouter request fails | Check the key, model slug, and model access in the OpenRouter dashboard. |
 | Phone cannot open the link | Share dialog → enter the laptop's LAN IP like `192.168.1.2:5173`. `localhost` always means the scanning device. |
@@ -229,7 +230,7 @@ Set `OPENROUTER_API_KEY` in the backend `.env` (and optionally `OPENROUTER_MODEL
 
 ## Production notes
 
-- Configure JDoodle and OpenRouter credentials server-side; never expose them in the frontend.
+- Configure OnlineCompiler.io and OpenRouter credentials server-side; never expose them in the frontend.
 - Rooms/projects persist to disk via `backend/app/store.py` (atomic writes under `data/`); the collab server shares that store for seeding and auto-save. For multi-instance deployment, swap the disk store for MongoDB/PostgreSQL and add Redis pub/sub for y-websocket.
 - Persist version snapshots (not keystrokes), add JWT guest/session tokens, rate limits, and endpoint-level tests.
 - AI suggestions carry a `base_version`; on apply, reject/re-analyse if the document has advanced.

@@ -53,7 +53,7 @@ npm run collab
 
 Open `http://localhost:5173`.
 
-For real compiler output, create a JDoodle Compiler API account and put its credentials in `.env` as `JDOODLE_CLIENT_ID` and `JDOODLE_CLIENT_SECRET`. The Run button sends the current editor snapshot to FastAPI and displays the returned stdout, compilation errors, runtime errors, time, and memory. Credentials stay in the backend and must never be exposed in the frontend.
+For real compiler output, put an OnlineCompiler.io API key in `.env` as `ONLINECOMPILER_API_KEY` (free at onlinecompiler.io). The Run button sends the current editor snapshot to FastAPI, which tries OnlineCompiler.io first, then JDoodle (`JDOODLE_CLIENT_ID` / `JDOODLE_CLIENT_SECRET`), then a local runtime, and displays the returned stdout, compilation errors, runtime errors, time, and memory. Credentials stay in the backend and must never be exposed in the frontend.
 
 For live collaboration, start the Yjs server in a separate terminal:
 

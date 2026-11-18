@@ -28,8 +28,14 @@ class Room(BaseModel):
     id: str; host_id: str; members: dict[str, Member] = {}; pending: dict[str, Member] = {}; language: Language = "python"
 class Execute(BaseModel):
     code: str = Field(max_length=100_000); language: Literal["python", "c", "cpp", "java", "javascript"]; stdin: str = Field(default="", max_length=20_000)
-class AiRequest(Execute):
-    stderr: str = Field(max_length=20_000)
+class AiRequest(BaseModel):
+    # AI diagnosis must work for every file in the workspace, including files
+    # whose language has no online/local runtime (TypeScript, Markdown, text,
+    # or anything imported from a repository), so language stays free-form here.
+    code: str = Field(max_length=100_000)
+    language: str = Field(default="text", max_length=40)
+    stdin: str = Field(default="", max_length=20_000)
+    stderr: str = Field(default="", max_length=20_000)
 class AskRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=20_000)
 class FileSave(BaseModel):
@@ -462,6 +468,70 @@ async def run_with_jdoodle(body: Execute) -> dict[str, Any]:
         "time": data.get("cpuTime"),
         "memory": data.get("memory"),
     }
+ONLINECOMPILER_URL = "https://api.onlinecompiler.io/api/run-code-sync/"
+# OnlineCompiler.io compiler ids (see https://www.onlinecompiler.io/docs/compilers).
+ONLINECOMPILER_COMPILERS = {
+    "python": "python-3.14",
+    "javascript": "nodejs-24",
+    "c": "gcc-15",
+    "cpp": "g++-15",
+    "java": "openjdk-25",
+}
+
+async def run_with_onlinecompiler(body: Execute) -> dict[str, Any]:
+    """Run code remotely through OnlineCompiler.io without exposing the API key."""
+    api_key = os.getenv("ONLINECOMPILER_API_KEY", "").strip()
+    if not api_key:
+        raise HTTPException(503, "OnlineCompiler is not configured. Set ONLINECOMPILER_API_KEY in .env.")
+
+    payload = {
+        "compiler": ONLINECOMPILER_COMPILERS[body.language],
+        "code": body.code,
+        "input": body.stdin,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            response = None
+            for attempt in range(2):
+                try:
+                    response = await client.post(
+                        ONLINECOMPILER_URL,
+                        headers={"Authorization": api_key, "Content-Type": "application/json"},
+                        json=payload,
+                    )
+                    response.raise_for_status()
+                    break
+                except httpx.TransportError as exc:
+                    detail = f"{type(exc).__name__}: {exc or 'connection failed'}"
+                    if attempt == 1:
+                        raise HTTPException(502, f"OnlineCompiler request failed: {detail}") from exc
+            data = response.json()
+    except httpx.HTTPStatusError as exc:
+        try:
+            detail = exc.response.json().get("error") or exc.response.text
+        except ValueError:
+            detail = exc.response.text
+        raise HTTPException(502, f"OnlineCompiler rejected the execution request: {str(detail)[:500]}") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, f"OnlineCompiler request failed: {exc}") from exc
+    except ValueError as exc:
+        raise HTTPException(502, "OnlineCompiler returned an invalid response.") from exc
+
+    exit_code = data.get("exit_code")
+    status = "Success" if exit_code == 0 else "Failed"
+    if exit_code == 124:
+        status = "Timeout"
+    elif exit_code in (137, 153, 71):
+        status = "Failed"
+    return {
+        "status": status,
+        "stdout": data.get("output") or "",
+        "stderr": data.get("error") or "",
+        "time": data.get("time") or data.get("total"),
+        "memory": data.get("memory"),
+        "note": "onlinecompiler",
+    }
+
 def run_code_locally(code: str, language: str, stdin: str) -> dict[str, Any]:
     """Compile/run a single editor snapshot on the backend machine.
 
@@ -535,18 +605,21 @@ def run_code_locally(code: str, language: str, stdin: str) -> dict[str, Any]:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 async def run_code(body: Execute) -> dict[str, Any]:
-    """Run through JDoodle; auto-compile locally when the keys are unavailable."""
-    try:
-        return await run_with_jdoodle(body)
-    except HTTPException as jdoodle_error:
+    """Run through the online compilers (OnlineCompiler, then JDoodle); compile locally as a last resort."""
+    errors: list[str] = []
+    for runner in (run_with_onlinecompiler, run_with_jdoodle):
         try:
-            result = await asyncio.to_thread(run_code_locally, body.code, body.language, body.stdin)
-        except HTTPException:
-            raise jdoodle_error
-        except Exception:
-            raise jdoodle_error
-        result["note"] = "local"
-        return result
+            return await runner(body)
+        except HTTPException as exc:
+            errors.append(str(exc.detail))
+    try:
+        result = await asyncio.to_thread(run_code_locally, body.code, body.language, body.stdin)
+    except HTTPException:
+        raise HTTPException(503, " | ".join(errors) or "No compiler is available")
+    except Exception as exc:
+        raise HTTPException(502, " | ".join(errors) or f"Execution failed: {exc}") from exc
+    result["note"] = "local"
+    return result
 
 @app.post("/api/execute")
 async def execute_current(body: Execute):

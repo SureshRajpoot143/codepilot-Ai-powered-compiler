@@ -22,12 +22,13 @@
 
 1. Start the collab server: `npm run collab` (y-websocket on port 1234).
 2. Start FastAPI: `uvicorn backend.app.main:app --reload --port 8000`.
-3. Create a free JDoodle Compiler API plan and copy the Client ID/Secret from its dashboard;
-   put them in `.env` as `JDOODLE_CLIENT_ID` and `JDOODLE_CLIENT_SECRET`.
+3. Create a free OnlineCompiler.io API key (onlinecompiler.io) and put it in `.env` as
+   `ONLINECOMPILER_API_KEY` (tried first); JDoodle (`JDOODLE_CLIENT_ID` / `JDOODLE_CLIENT_SECRET`)
+   is used as a second remote provider, then a local runtime.
 4. Start the frontend: `npm run dev --prefix frontend`.
 
-The Run action submits the current editor content and reports an unavailable compiler rather
-than returning made-up output when JDoodle is not configured.
+The Run action submits the current editor content to the online compilers and falls back to a
+local runtime rather than returning made-up output when neither is configured.
 
 ## Next production work
 

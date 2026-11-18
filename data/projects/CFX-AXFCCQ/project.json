@@ -1,0 +1,36 @@
+{
+  "project_id": "CFX-AXFCCQ",
+  "name": "You's workspace",
+  "owner_id": "U-G103GFSJ",
+  "created_at": 1794923421.056279,
+  "updated_at": 1794923421.0814238,
+  "language": "python",
+  "members": {
+    "U-G103GFSJ": {
+      "id": "U-G103GFSJ",
+      "name": "You",
+      "device": "This device",
+      "role": "host"
+    }
+  },
+  "filesystem": [
+    {
+      "id": "60f3540e1938",
+      "parent_id": "",
+      "name": "main.py",
+      "path": "main.py",
+      "is_directory": false,
+      "language": "python",
+      "created_at": 1794923421.061148
+    },
+    {
+      "id": "7903050f393f",
+      "parent_id": "",
+      "name": "README.md",
+      "path": "README.md",
+      "is_directory": false,
+      "language": "markdown",
+      "created_at": 1794923421.073675
+    }
+  ]
+}
