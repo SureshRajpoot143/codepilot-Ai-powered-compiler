@@ -22,13 +22,16 @@ type TreeNode={path:string;name:string;parent:string;isDir:boolean;language:stri
 type FileTab={path:string;name:string;language:string;code:string}
 type Presence={id:string;name:string;activeFile:string}
 type ProviderGroup={doc:Y.Doc;provider:WebsocketProvider;yt:Y.Text}
-type ExplainData={program_summary?:string;how_it_works?:string[];key_parts?:string[];root_cause?:string;explanation?:string;changes?:string[];fixed_code?:string}
+type ExplainData={program_summary?:string;how_it_works?:string[];key_parts?:string[];root_cause?:string;explanation?:string;changes?:string[];fixed_code?:string;verified?:boolean|null;verification_error?:string;needs_input?:boolean;attempts?:number}
 const ExplainResult=({data,currentCode,onApply,onDismiss}:{data:ExplainData;currentCode:string;onApply:()=>void;onDismiss:()=>void})=><div className="fix explanation-result">
  <strong>Program explanation</strong>
  <p>{data.program_summary||'A detailed program explanation is unavailable.'}</p>
  {!!data.how_it_works?.length&&<><b>How it works</b><ol>{data.how_it_works.map((step,index)=><li key={index}>{step}</li>)}</ol></>}
  {!!data.key_parts?.length&&<><b>Important parts</b><ul>{data.key_parts.map((part,index)=><li key={index}>{part}</li>)}</ul></>}
  <p><b>Code check:</b> {data.root_cause||'Review complete.'}</p>
+ {data.verified===true&&<p className="ok">✓ Verified — the fixed code was executed and runs successfully.</p>}
+ {data.verified===false&&<p className="warning">⚠ The AI fix was executed and still fails: {data.verification_error||'unknown error'}</p>}
+ {data.needs_input&&<p className="hint">This program waits for keyboard input. Add the values it needs in the <b>Input</b> tab, then press ▶ Run.</p>}
  {data.explanation&&<p><b>Suggested fix:</b> {data.explanation}</p>}
  {!!data.changes?.length&&<p><b>Changes:</b> {data.changes.join(', ')}</p>}
  <button className="ghost" onClick={onDismiss}>Close</button>
@@ -282,6 +285,7 @@ function App(){
  const terminalResize=usePanelResize(Math.min(230,maxTerminalHeight),{min:120,max:maxTerminalHeight},'vertical')
  const aiResize=usePanelResize(330,{min:270,max:520},'horizontal')
  const editorRef=useRef<any>();const monacoRef=useRef<any>();const wsRef=useRef<WebSocket>();const creatorRef=useRef(false)
+ const saveTimerRef=useRef<number>()
  const treeDoc=useMemo(()=>new Y.Doc(),[room]);const ytree=useMemo(()=>treeDoc.getMap('nodes'),[treeDoc])
  useEffect(()=>{let active=true;api('/ai-status').then(status=>{if(active)setAiProviderStatus(status)}).catch(()=>{if(active)setAiProviderStatus(null)});return()=>{active=false}},[])
  const openDocsRef=useRef<Map<string,ProviderGroup>>(new Map());const bindRef=useRef<{path:string;binding:MonacoBinding}|null>(null)
@@ -463,7 +467,17 @@ const remoteStates=(awareness:any,doc?:Y.Doc)=>{
   paintCursors(entry.provider.awareness);paintPresence()
  }
  const setCompilerMarkers=(error:string)=>{const model=editorRef.current?.getModel();const monaco=monacoRef.current;if(!model||!monaco)return;const requestedLine=Number(error.match(/(?:line\s+|:)(\d+)/i)?.[1]||1);const line=Math.max(1,Math.min(requestedLine,model.getLineCount()));monaco.editor.setModelMarkers(model,'jdoodle',error?[{severity:monaco.MarkerSeverity.Error,message:error,startLineNumber:line,startColumn:1,endLineNumber:line,endColumn:model.getLineMaxColumn(line)}]:[])}
- const updateCode=(value?:string)=>{if(role==='viewer')return;notifyTyping();setCompilerMarkers('');setCanDownload(false);const code=value??'';const idx=activeRef.current;setTabs(ts=>ts.map((t,i)=>i===idx?{...t,code}:t));setVersion(v=>v+1)}
+ const persistFile=async(path:string,content:string,language:string)=>{if(!room||!path)return;try{await api(`/workspace/${room}/file?actor_id=${meId}`,{method:'PUT',body:JSON.stringify({path,content,language})})}catch{}}
+ // Run Project reads the files on the backend disk, so everything open in the
+ // editor must be written out first — otherwise the run uses the old version
+ // and reports the error the user just fixed.
+ const flushOpenDocs=async()=>{
+  if(!room)return
+  await Promise.all(tabsRef.current.map(t=>{const e=openDocsRef.current.get(t.path);return persistFile(t.path,e?e.yt.toString():t.code,t.language)}))
+ }
+ const updateCode=(value?:string)=>{if(role==='viewer')return;notifyTyping();setCompilerMarkers('');setCanDownload(false);const code=value??'';const idx=activeRef.current;setTabs(ts=>ts.map((t,i)=>i===idx?{...t,code}:t));setVersion(v=>v+1)
+  const tab=tabsRef.current[idx]
+  if(tab){clearTimeout(saveTimerRef.current);saveTimerRef.current=window.setTimeout(()=>{void persistFile(tab.path,code,tab.language)},900)}}
  const addNodeInTree=(parent:string,name:string,isDir:boolean,language?:string)=>{const path=parent?`${parent}/${name}`:name;if(ytree.has(path))return path;const m=new Y.Map();m.set('name',name);m.set('parent',parent);m.set('isDir',isDir);m.set('language',language||(isDir?'folder':langOf(path)));ytree.set(path,m);return path}
  const createNode=async(parent:string,name:string,isDir:boolean,language?:string)=>{const path=addNodeInTree(parent,name,isDir,language);try{await api(`/workspace/${room}/nodes`,{method:'POST',body:JSON.stringify({parent,name,is_directory:isDir,language:language||undefined})});addActivity(`Created ${path}`)}catch(e){setFsError(e instanceof Error?e.message:String(e))}return path}
  const commitNewNode=async()=>{
@@ -587,7 +601,7 @@ const remoteStates=(awareness:any,doc?:Y.Doc)=>{
    }catch(wasm:any){setOutput(`${msg}\n\nIn-browser fallback unavailable: ${String(wasm?.message||wasm)||'unknown error'}`)}
   }else setOutput(`Execution unavailable\n\n${msg}\n\nNo online compiler could run this file and the backend machine has no local runtime for ${t.language}. Check that ONLINECOMPILER_API_KEY / JDOODLE_CLIENT_ID / JDOODLE_CLIENT_SECRET are set, or install python3, node, cc/c++ or javac on the backend.`)
  }finally{setRunning(false)}}
-  const runProject=async()=>{if(!entry)return;setRunning(true);setCanDownload(false);setOutput(`${name} is running project entry ${entry}…`);setPanel('Output');try{const result=await api(`/rooms/${room}/execute-project?actor_id=${meId}`,{method:'POST',body:JSON.stringify({entry,stdin})});showResult(result,{project:true});addActivity(`Ran project: ${result.entry||entry}`)}catch(error){setOutput(`Project run unavailable\n\n${error instanceof Error?error.message:'Could not start the run.'}\n\nThe whole project runs on the backend machine (like VS Code) — needs the runtime installed there.`)}finally{setRunning(false)}}
+  const runProject=async()=>{if(!entry)return;setRunning(true);setCanDownload(false);setOutput(`${name} is running project entry ${entry}…`);setPanel('Output');try{await flushOpenDocs();const result=await api(`/rooms/${room}/execute-project?actor_id=${meId}`,{method:'POST',body:JSON.stringify({entry,stdin})});showResult(result,{project:true});addActivity(`Ran project: ${result.entry||entry}`)}catch(error){setOutput(`Project run unavailable\n\n${error instanceof Error?error.message:'Could not start the run.'}\n\nThe whole project runs on the backend machine (like VS Code) — needs the runtime installed there.`)}finally{setRunning(false)}}
   const importFiles=async(items:{path:string;content:string}[])=>{if(!items.length)return;setImporting(true);setImportMsg('');try{const r=await api(`/workspace/${room}/import/json?actor_id=${meId}`,{method:'POST',body:JSON.stringify({files:items})});await resyncTree();setImportMsg('✓ Imported '+r.added+' files'+(r.skipped&&r.skipped.length?' ('+r.skipped.length+' skipped)':''));addActivity('Imported project — '+r.added+' files')}catch(error){setImportMsg('⚠ '+String(error instanceof Error?error.message:error))}finally{setImporting(false)}}
   const onImportPicked=(e:any)=>{const files=[...(e.target.files||[])].filter((f:any)=>f.webkitRelativePath||f.name);Promise.all(files.map(async(f:any)=>{const text=await f.text();return{path:(f.webkitRelativePath||f.name).replace(/^[\/]+/,''),content:text}})).then(items=>{e.target.value='';importFiles(items)})}
   const importFromPath=async()=>{const dir=importPath.trim();if(!dir)return;setImporting(true);setImportMsg('');try{const r=await api(`/workspace/${room}/import/path?actor_id=${meId}`,{method:'POST',body:JSON.stringify({dir})});await resyncTree();setImportMsg('✓ Imported '+r.added+' files'+(r.skipped&&r.skipped.length?' ('+r.skipped.length+' skipped)':''));addActivity('Imported from server path — '+r.added+' files')}catch(error){setImportMsg('⚠ '+String(error instanceof Error?error.message:error))}finally{setImporting(false)}}
@@ -597,13 +611,18 @@ const remoteStates=(awareness:any,doc?:Y.Doc)=>{
  const downloadFile=()=>{const t=tabs[active];if(!t)return;const blob=new Blob([currentCode()],{type:'text/plain;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=t.name;document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);addActivity(`Downloaded ${t.name}`)}
  const analyze=async()=>{const t=tabs[active];if(!t)return;openAiTool('fix');setAi(true);setAiError('');setFix(false);setFixData(null);setPanel('AI Debugger');try{// Always capture fresh compiler/runtime output for the active file so the
   // AI never diagnoses a stale error from another file (or "no error" when it did fail).
-  let stderr='';if(['python','javascript','c','cpp','java'].includes(t.language)){try{const probe=await api('/execute',{method:'POST',body:JSON.stringify({code:currentCode(),language:t.language,stdin})});stderr=(probe?.stderr||'').trim()}catch(runError){stderr=errors||(runError instanceof Error?runError.message:String(runError))}}else stderr=`This file is ${t.language}, which cannot be executed in this editor; review it for errors and explain it.`;const suggestion=await api('/ai-fix',{method:'POST',body:JSON.stringify({code:currentCode(),language:t.language,stderr})});setAi(false);setFix(true);setFixData(suggestion);sendRoom('ai:fix_ready',suggestion)}catch(error){setAi(false);setAiError(error instanceof Error?error.message:String(error));setPanel('AI Debugger')}}
+  let stderr='';if(['python','javascript','c','cpp','java'].includes(t.language)){try{const probe=await api('/execute',{method:'POST',body:JSON.stringify({code:currentCode(),language:t.language,stdin})});stderr=(probe?.stderr||'').trim()}catch(runError){stderr=errors||(runError instanceof Error?runError.message:String(runError))}}else stderr=`This file is ${t.language}, which cannot be executed in this editor; review it for errors and explain it.`;const suggestion=await api('/ai-fix',{method:'POST',body:JSON.stringify({code:currentCode(),language:t.language,stdin,stderr})});setAi(false);setFix(true);setFixData(suggestion);sendRoom('ai:fix_ready',suggestion)}catch(error){setAi(false);setAiError(error instanceof Error?error.message:String(error));setPanel('AI Debugger')}}
  const openAiTool=(tool:'home'|'test'|'translate'|'fix'|'ask')=>{setAiTool(tool);setAiPanelOpen(true);if(tool==='translate'&&tabs[active])setTranslateLanguage(['python','javascript','typescript','java','c','cpp'].find(lang=>lang!==tabs[active].language)||'python')}
  const reviewActiveFile=()=>{const t=tabs[active];if(!t)return;const code=currentCode();openAiTool('ask');setAskIntent('ask');void submitAsk(`Review ${t.path}`,`Review this ${t.language} source file (${t.path}). Explain the review in clear English. Check correctness, readability, edge cases, and security risks. Return prioritized findings with line references when possible. If no issues are found, say that clearly. Do not rewrite the whole file unless needed.\n\n\`\`\`${t.language}\n${code}\n\`\`\``)}
  const startCodeGeneration=()=>{openAiTool('ask');setAskIntent('generate');setAskMsg('')}
  const generateTests=()=>{const t=tabs[active];if(!t)return;openAiTool('test');void submitAsk(`Generate tests for ${t.path}`,`Generate comprehensive test cases for this ${t.language} code in ${t.path}. Include normal cases, edge cases, and invalid inputs where relevant. Prefer runnable tests using the language's common testing conventions. Explain how to run them, and put the test code in a fenced code block.\n\n\`\`\`${t.language}\n${currentCode()}\n\`\`\``)}
  const translateCode=()=>{const t=tabs[active];if(!t)return;openAiTool('translate');void submitAsk(`Translate ${t.path} to ${translateLanguage}`,`Convert this ${t.language} program into ${translateLanguage}. Preserve behavior and explain any language-specific changes briefly. Put the complete translated program in a fenced code block labeled ${translateLanguage}.\n\n\`\`\`${t.language}\n${currentCode()}\n\`\`\``)}
- const applyFix=()=>{const t=tabs[active];if(!t||!fixData)return;const fixed=fixData.fixed_code||t.code;const entry=openDocsRef.current.get(t.path);if(entry){entry.yt.delete(0,entry.yt.length);entry.yt.insert(0,fixed)}setTabs(fs=>fs.map((x,i)=>i===active?{...x,code:fixed}:x));setErrors('');setCompilerMarkers('');void api(`/workspace/${room}/file?actor_id=${meId}`,{method:'PUT',body:JSON.stringify({path:t.path,content:fixed,language:t.language})}).catch(()=>{});setFix(false);setFixData(null);setVersion(v=>v+1);sendRoom('chat:message',{who:'CodeFix AI',text:`${name} applied an AI fix.`});addActivity(`AI fix applied by ${name}`)}
+ const applyFix=async()=>{const t=tabs[active];if(!t||!fixData)return;const fixed=fixData.fixed_code||t.code;const entry=openDocsRef.current.get(t.path);if(entry){entry.yt.delete(0,entry.yt.length);entry.yt.insert(0,fixed)}else if(editorRef.current?.getModel()){editorRef.current.getModel().setValue(fixed)}setTabs(fs=>fs.map((x,i)=>i===active?{...x,code:fixed}:x));setErrors('');setCompilerMarkers('');setVersion(v=>v+1)
+  // Wait for the save: Run Project executes what is on disk, and a fire-and-forget
+  // PUT used to race with the run, re-reporting the error that was just fixed.
+  await persistFile(t.path,fixed,t.language)
+  sendRoom('chat:message',{who:'CodeFix AI',text:`${name} applied an AI fix.`});addActivity(`AI fix applied by ${name}`);setFix(false);setFixData(null)
+  if(['python','javascript','c','cpp','java'].includes(t.language)){setTimeout(()=>{void run()},80)}}
  const extractCode=(text:string)=>{const m=text.match(/```([\w-]*)\s*\n?([\s\S]*?)```/);return m?{label:m[1],code:m[2].trim()}:null}
  const detectLanguage=(code:string,label?:string):string=>{
   const fence=(label||'').toLowerCase()

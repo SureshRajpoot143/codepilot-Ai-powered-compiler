@@ -788,58 +788,190 @@ async def ai_status():
     """Expose provider readiness and model without ever returning the API key."""
     return {"provider": "OpenRouter", "model": _openrouter_model(), "configured": bool(_openrouter_key())}
 
-async def run_ai_fix(body: AiRequest) -> dict[str, Any]:
-    """Ask the configured OpenRouter model to diagnose code and propose a fix."""
-    stderr = body.stderr.strip() or "(no error output — code did not run yet)"
-    prompt = f"""You are the AI coding assistant inside a shared coding room on a collaborative platform.
-Language: {body.language}
+RUNTIME_LANGUAGES = {"python", "javascript", "c", "cpp", "java"}
+# Programs that stop because they expected stdin are not bugs. Without this the
+# repair loop would "fix" EOFError by hard-coding inputs into the user's code.
+_MISSING_INPUT_RE = re.compile(
+    r"(EOFError|no more (?:lines|input)|NoSuchElementException|No line found|unexpected end of input|"
+    r"EOF when reading|end of file|EOF on stdin)",
+    re.I,
+)
+MAX_FIX_ATTEMPTS = 3
 
-Explain the complete program in clear English. Give a thorough explanation of what the program does, its inputs and outputs, and how its main sections work. Explain the code as written, even when it has no errors.
+def _result_text(result: dict[str, Any]) -> str:
+    """Human-readable failure text from an execution result."""
+    stderr = str(result.get("stderr") or "").strip()
+    stdout = str(result.get("stdout") or "").strip()
+    return (stderr or stdout or f"Program exited with status {result.get('status')}")[:4000]
 
-The last run produced this compiler/runtime output:
+def _needs_input(result: dict[str, Any]) -> bool:
+    return result.get("status") != "Success" and bool(_MISSING_INPUT_RE.search(str(result.get("stderr") or "")))
+
+async def _check_code(code: str, language: str, stdin: str) -> dict[str, Any] | None:
+    """Run a candidate program exactly like ▶ Run does, so AI output is verified.
+
+    Local runtimes are tried first (fast and quota-free); the online compilers
+    used by the Run button are the fallback. Returns None when this editor has
+    no runtime for the language.
+    """
+    if language not in RUNTIME_LANGUAGES:
+        return None
+    try:
+        return await asyncio.to_thread(run_code_locally, code, language, stdin)
+    except HTTPException:
+        pass
+    except Exception:
+        pass
+    try:
+        return await run_code(Execute(code=code, language=language, stdin=stdin))
+    except HTTPException as exc:
+        return {"status": "Unavailable", "stdout": "", "stderr": str(exc.detail), "time": "—", "memory": "—"}
+
+def _parse_ai_json(text: str) -> dict[str, Any]:
+    """Parse a JSON object even when the model wraps it in markdown fences."""
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.split("\n", 1)[1] if "\n" in cleaned else cleaned
+        cleaned = cleaned.rsplit("```", 1)[0]
+    try:
+        data = json.loads(cleaned)
+    except ValueError:
+        start, end = cleaned.find("{"), cleaned.rfind("}")
+        if start < 0 or end <= start:
+            raise HTTPException(502, "AI did not return a valid JSON fix.")
+        try:
+            data = json.loads(cleaned[start:end + 1])
+        except ValueError as exc:
+            raise HTTPException(502, "AI did not return a valid JSON fix.") from exc
+    if not isinstance(data, dict):
+        raise HTTPException(502, "AI did not return a valid JSON fix.")
+    return data
+
+def _fix_prompt(code: str, language: str, error: str, stdin: str, attempt: int, needs_input: bool) -> str:
+    stdin_block = stdin.strip() or "(none — the user did not provide program input)"
+    error_block = error.strip() or "(the program currently runs without errors)"
+    retry_note = ""
+    if attempt > 1:
+        retry_note = (
+            "\nIMPORTANT: your previous fixed_code was executed and STILL FAILED. "
+            f"The real error from that run is above. Return a different, working version.\n"
+        )
+    input_note = ""
+    if needs_input:
+        input_note = (
+            "\nNOTE: the program stops because it is waiting for input (EOF). That is not a bug. "
+            "Keep the program reading input normally — do NOT hard-code values, and return the code unchanged "
+            "if this is the only problem.\n"
+        )
+    return f"""You are the AI debugger inside CodeFix AI, a collaborative coding IDE.
+Language: {language}
+
+Goal: return a corrected version of the program that compiles and runs successfully in this IDE.
+Everything you return will be executed immediately, so fixed_code must be a complete, valid, runnable file.
+
+Compiler/runtime output from the current code:
 ---
-{stderr}
+{error_block}
+---
+
+Program input (stdin) the user supplied (one value per line, may be empty):
+---
+{stdin_block}
 ---
 
 Current source code:
-```{body.language}
-{body.code}
+```{language}
+{code}
 ```
+{retry_note}{input_note}
+Rules:
+- fixed_code MUST contain the whole file as it should be saved — never a diff, snippet, ellipsis, or placeholder.
+- Fix every compiler/runtime error the output above reports. Do not just rename or delete failing features.
+- Preserve the program's original behavior and language. Do not hard-code answers or stdin values.
+- Do not add infinite loops, forced exits, or try/except blocks that hide real errors.
+- If the current code really is correct, return it unchanged in fixed_code and leave explanation empty.
 
-Then diagnose any compiler/runtime problem and respond with STRICT JSON only (no markdown fences, no commentary) with this exact shape:
+Respond with STRICT JSON only (no markdown fences, no commentary) in this exact shape:
 {{
   "program_summary": "what this program does, in English",
   "how_it_works": ["clear step-by-step explanation in English"],
   "key_parts": ["important functions, variables, or concepts and what they do"],
-  "root_cause": "short root-cause explanation",
-  "explanation": "what the fix changes and why",
+  "root_cause": "short root-cause explanation of the error, or why there is none",
+  "explanation": "what the fix changes and why (empty when no fix is needed)",
   "changes": ["concrete change 1", "concrete change 2"],
   "fixed_code": "the complete corrected source code"
-}}
-If there is no real problem, say so in root_cause, set explanation to an empty string, changes to an empty array, and return the original code unchanged in fixed_code. Do not invent a bug just to suggest a fix."""
-    fix_schema = {
-        "type": "object",
-        "properties": {
-            "program_summary": {"type": "string"},
-            "how_it_works": {"type": "array", "items": {"type": "string"}},
-            "key_parts": {"type": "array", "items": {"type": "string"}},
-            "root_cause": {"type": "string"},
-            "explanation": {"type": "string"},
-            "changes": {"type": "array", "items": {"type": "string"}},
-            "fixed_code": {"type": "string"},
-        },
-        "required": ["program_summary", "how_it_works", "key_parts", "root_cause", "explanation", "changes", "fixed_code"],
-    }
-    text = await _ai_generate(prompt, 0.2, fix_schema)
-    text = text.strip()
-    if "```" in text:
-        text = text.split("```", 2)[1]
-        if text.startswith("json"): text = text[4:]
-        text = text.split("```", 1)[0].strip()
-    try:
-        data = json.loads(text)
-    except ValueError as exc:
-        raise HTTPException(502, "AI did not return a valid JSON fix.") from exc
+}}"""
+
+FIX_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "program_summary": {"type": "string"},
+        "how_it_works": {"type": "array", "items": {"type": "string"}},
+        "key_parts": {"type": "array", "items": {"type": "string"}},
+        "root_cause": {"type": "string"},
+        "explanation": {"type": "string"},
+        "changes": {"type": "array", "items": {"type": "string"}},
+        "fixed_code": {"type": "string"},
+    },
+    "required": ["program_summary", "how_it_works", "key_parts", "root_cause", "explanation", "changes", "fixed_code"],
+}
+
+async def run_ai_fix(body: AiRequest) -> dict[str, Any]:
+    """Diagnose code and return a fix that was actually executed and verified.
+
+    The model's first answer is only a draft: every candidate is run through the
+    same executor as ▶ Run, and any remaining error is fed back to the model for
+    another attempt. That way "Apply Fix" never installs code that still fails.
+    """
+    language = body.language
+    stdin = body.stdin
+    original = body.code
+    error = body.stderr.strip()
+
+    # Never trust a stale client error: run the current snapshot first.
+    probe = await _check_code(original, language, stdin)
+    checked = probe is not None and probe.get("status") not in {None, "Unavailable"}
+    if checked:
+        if probe.get("status") == "Success":
+            error = ""
+        else:
+            error = _result_text(probe) or error
+
+    data: dict[str, Any] = {}
+    fixed = original
+    verified: bool | None = None
+    needs_input = checked and _needs_input(probe) if probe else False
+    attempts = 0
+    current = original
+    current_error = error
+
+    for attempt in range(1, MAX_FIX_ATTEMPTS + 1):
+        attempts = attempt
+        prompt = _fix_prompt(current, language, current_error, stdin, attempt, needs_input)
+        data = _parse_ai_json(await _ai_generate(prompt, 0.2, FIX_SCHEMA))
+        candidate = str(data.get("fixed_code") or "").strip()
+        if not candidate:
+            candidate = current
+        fixed = candidate
+        check = await _check_code(candidate, language, stdin)
+        if check is None:
+            verified = None
+            break
+        if check.get("status") == "Success":
+            verified = True
+            break
+        if _needs_input(check):
+            needs_input = True
+            verified = None
+            current_error = _result_text(check)
+            break
+        verified = False
+        current_error = _result_text(check)
+        current = candidate
+
+    if probe is not None and probe.get("status") == "Success" and fixed.strip() == original.strip():
+        verified = True
+
     return {
         "base_version": int(time.time()),
         "program_summary": data.get("program_summary", ""),
@@ -848,7 +980,12 @@ If there is no real problem, say so in root_cause, set explanation to an empty s
         "root_cause": data.get("root_cause", "Review required."),
         "explanation": data.get("explanation", ""),
         "changes": data.get("changes", []),
-        "fixed_code": data.get("fixed_code", body.code),
+        "fixed_code": fixed or original,
+        # Verification metadata lets the UI promise "this now runs" honestly.
+        "verified": verified,
+        "verification_error": "" if verified else current_error,
+        "needs_input": needs_input,
+        "attempts": attempts,
     }
 async def run_ai_ask(prompt: str) -> dict[str, str]:
     """Answer any question / write a program through the AI Ask chat."""
